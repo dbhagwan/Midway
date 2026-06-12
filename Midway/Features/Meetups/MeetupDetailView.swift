@@ -14,17 +14,18 @@ struct MeetupDetailView: View {
     @State private var calendarStatus: String?
 
     var body: some View {
-        content
-            .navigationTitle(isNewlyCreated ? "It's a plan!" : "Meetup")
-            .navigationBarTitleDisplayMode(.inline)
-    }
-
-    @ViewBuilder
-    private var content: some View {
         if isNewlyCreated {
-            NavigationStack { card }
+            // Presented as its own sheet, so it needs its own stack — and the
+            // title must be applied inside the stack to reach its nav bar.
+            NavigationStack {
+                card
+                    .navigationTitle("It's a plan!")
+                    .navigationBarTitleDisplayMode(.inline)
+            }
         } else {
             card
+                .navigationTitle("Meetup")
+                .navigationBarTitleDisplayMode(.inline)
         }
     }
 

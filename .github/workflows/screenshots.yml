@@ -35,6 +35,11 @@ jobs:
             | grep -Eo 'iPhone 1[6-9][a-zA-Z ]*' | head -1 | sed 's/ *$//')
           echo "name=${NAME:-iPhone 17}" >> "$GITHUB_OUTPUT"
           echo "Using simulator: ${NAME:-iPhone 17}"
+          # Boot now so first-boot system banners (e.g. "Ready for Apple
+          # Intelligence") appear and clear while the build runs, instead
+          # of photobombing the first screenshot.
+          xcrun simctl boot "${NAME:-iPhone 17}" || true
+          xcrun simctl bootstatus "${NAME:-iPhone 17}" -b || true
 
       - name: Build and run tests (unit + UI screenshots)
         env:
