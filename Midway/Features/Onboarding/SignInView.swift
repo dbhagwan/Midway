@@ -12,27 +12,20 @@ struct SignInView: View {
             VStack(spacing: 20) {
                 Spacer()
 
-                GlassEffectContainer(spacing: 18) {
-                    VStack(spacing: 18) {
-                        Image(systemName: "point.3.connected.trianglepath.dotted")
-                            .font(.system(size: 56))
-                            .foregroundStyle(Color.midwayCoral)
-                            .padding(26)
-                            .glassEffect(.regular.tint(.midwayCoral.opacity(0.12)), in: .circle)
+                // The app icon, alive: a glass tile with the animated mark.
+                AnimatedMeridianLogo(size: 200)
+                    .glassEffect(.regular, in: .rect(cornerRadius: 45))
 
-                        VStack(spacing: 10) {
-                            Text("Midway")
-                                .font(.system(size: 42, weight: .bold, design: .rounded))
-                            Text("Find the best place to meet,\nwithout the group chat back-and-forth.")
-                                .font(.headline)
-                                .fontWeight(.regular)
-                                .multilineTextAlignment(.center)
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .glassCard(cornerRadius: 32, padding: 24)
-                    }
+                VStack(spacing: 10) {
+                    Text("Midway")
+                        .font(.system(size: 42, weight: .bold, design: .rounded))
+                    Text("Find the best place to meet,\nwithout the group chat back-and-forth.")
+                        .font(.headline)
+                        .fontWeight(.regular)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
                 }
+                .padding(.top, 14)
 
                 Spacer()
 

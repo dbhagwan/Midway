@@ -51,9 +51,25 @@ jobs:
             -project Midway.xcodeproj \
             -scheme Midway \
             -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.name }}" \
+            -derivedDataPath DerivedData \
             -resultBundlePath TestResults.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             2>&1 | tee xcodebuild.log
+
+      - name: Record the opening logo animation
+        run: |
+          APP_PATH=$(find DerivedData/Build/Products -maxdepth 2 -name "Midway.app" -type d | head -1)
+          echo "Recording launch of $APP_PATH"
+          xcrun simctl install booted "$APP_PATH"
+          xcrun simctl terminate booted com.midway.app 2>/dev/null || true
+          xcrun simctl io booted recordVideo --codec h264 --force logo-animation.mp4 &
+          RECORDER=$!
+          sleep 2
+          xcrun simctl launch booted com.midway.app -uiTestMode
+          sleep 11
+          kill -INT "$RECORDER"
+          wait "$RECORDER" || true
+          ls -la logo-animation.mp4
 
       - name: Upload screenshots artifact
         if: always()
@@ -72,13 +88,14 @@ jobs:
             TestResults.xcresult
             xcodebuild.log
 
-      - name: Commit screenshots to the branch
+      - name: Commit screenshots and video to the branch
         if: success()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          mkdir -p docs/screenshots
+          mkdir -p docs/screenshots docs/media
           cp screenshots/*.png docs/screenshots/
-          git add docs/screenshots
-          git commit -m "Add simulator UI screenshots [skip ci]" || echo "No new screenshots"
+          cp logo-animation.mp4 docs/media/ 2>/dev/null || true
+          git add docs/screenshots docs/media
+          git commit -m "Add simulator UI screenshots and logo video [skip ci]" || echo "No changes"
           git push
