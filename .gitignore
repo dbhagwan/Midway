@@ -1,0 +1,24 @@
+# Xcode
+*.xcodeproj
+*.xcworkspace
+!default.xcworkspace
+xcuserdata/
+DerivedData/
+*.moved-aside
+*.xccheckout
+*.xcscmblueprint
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Generated
+Midway/Support/Info.plist
+
+# macOS
+.DS_Store
+
+# Secrets
+*.env
+Secrets.xcconfig
