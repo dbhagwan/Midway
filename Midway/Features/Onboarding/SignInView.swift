@@ -30,7 +30,7 @@ struct SignInView: View {
                 Spacer()
 
                 Button {
-                    signIn()
+                    signIn(with: .snapchat)
                 } label: {
                     HStack {
                         Image(systemName: "bolt.fill")
@@ -43,6 +43,21 @@ struct SignInView: View {
                 .buttonStyle(.glassProminent)
                 .tint(.yellow)
                 .foregroundStyle(.black)
+                .disabled(isSigningIn)
+
+                Button {
+                    signIn(with: .apple)
+                } label: {
+                    HStack {
+                        Image(systemName: "applelogo")
+                        Text("Sign in with Apple")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                }
+                .buttonStyle(.glassProminent)
+                .tint(.black)
                 .disabled(isSigningIn)
 
                 if let errorMessage {
@@ -61,12 +76,14 @@ struct SignInView: View {
         }
     }
 
-    private func signIn() {
+    private func signIn(with provider: AuthProvider) {
         isSigningIn = true
         errorMessage = nil
         Task {
             do {
-                try await appState.signIn()
+                try await appState.signIn(with: provider)
+            } catch AuthError.cancelled {
+                // No error banner for a user-cancelled sheet.
             } catch {
                 errorMessage = error.localizedDescription
             }

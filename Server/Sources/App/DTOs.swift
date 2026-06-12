@@ -161,6 +161,59 @@ struct InviteDTO: Content {
     var createdAt: Date?
 }
 
+struct DeviceBody: Content {
+    var token: String
+}
+
+struct BlockBody: Content {
+    var report: Bool
+    var reason: String?
+}
+
+// MARK: - Voting
+
+struct SuggestionUpload: Content {
+    var rank: Int
+    var venueName: String
+    var areaName: String
+    var category: String
+    var lat: Double
+    var lon: Double
+    var time: Date
+    var explanation: String
+    var fairness: Double
+    var interest: Double
+    var budgetFit: Double
+}
+
+struct SuggestionOptionDTO: Content {
+    var id: UUID
+    var rank: Int
+    var venueName: String
+    var areaName: String
+    var category: String
+    var lat: Double
+    var lon: Double
+    var time: Date
+    var explanation: String
+    var fairness: Double
+    var interest: Double
+    var budgetFit: Double
+    var voterNames: [String]
+    var myVote: Bool
+}
+
+struct VoteBody: Content {
+    var suggestionID: UUID
+}
+
+struct VotePendingDTO: Content {
+    var sessionID: UUID
+    var organizerName: String
+    var type: String
+    var createdAt: Date?
+}
+
 struct ConfirmMeetupBody: Content {
     var title: String
     var venueName: String

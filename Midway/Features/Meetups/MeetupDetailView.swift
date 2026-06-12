@@ -1,6 +1,9 @@
 import SwiftUI
 import MapKit
 import EventKit
+#if canImport(SCSDKCreativeKit)
+import SCSDKCreativeKit
+#endif
 
 /// The confirmed meetup card: where, when, who — with calendar add and
 /// Apple Maps handoff for directions.
@@ -12,6 +15,8 @@ struct MeetupDetailView: View {
     var onDone: (() -> Void)?
 
     @State private var calendarStatus: String?
+    @State private var onMyWaySent = false
+    @State private var shareImage: UIImage?
 
     var body: some View {
         if isNewlyCreated {
@@ -78,6 +83,34 @@ struct MeetupDetailView: View {
                     Label(calendarStatus ?? "Add to Calendar", systemImage: "calendar.badge.plus")
                 }
                 .disabled(calendarStatus != nil)
+                if meetup.time > Date() {
+                    Button {
+                        sendOnMyWay()
+                    } label: {
+                        Label(onMyWaySent ? "Told everyone you're coming" : "I'm on my way",
+                              systemImage: "figure.walk.motion")
+                    }
+                    .disabled(onMyWaySent)
+                }
+            }
+
+            Section("Share the plan") {
+                if let shareImage {
+                    ShareLink(
+                        item: Image(uiImage: shareImage),
+                        preview: SharePreview(meetup.title, image: Image(uiImage: shareImage))
+                    ) {
+                        Label("Share meetup card", systemImage: "square.and.arrow.up")
+                    }
+                }
+                if canShareToSnapchat {
+                    Button {
+                        shareToSnapchat()
+                    } label: {
+                        Label("Send as a Snap", systemImage: "bolt.fill")
+                            .foregroundStyle(Color(red: 0.95, green: 0.8, blue: 0))
+                    }
+                }
             }
 
             if !isNewlyCreated {
@@ -91,6 +124,13 @@ struct MeetupDetailView: View {
             }
         }
         .onMidwayBackground()
+        .onAppear {
+            if shareImage == nil {
+                let renderer = ImageRenderer(content: MeetupShareCard(meetup: meetup))
+                renderer.scale = 3
+                shareImage = renderer.uiImage
+            }
+        }
         .toolbar {
             if isNewlyCreated {
                 ToolbarItem(placement: .confirmationAction) {
@@ -101,6 +141,29 @@ struct MeetupDetailView: View {
     }
 
     // MARK: - Actions
+
+    private func sendOnMyWay() {
+        onMyWaySent = true
+        Task { await appState.backend.sendOnMyWay(meetupID: meetup.id) }
+    }
+
+    private var canShareToSnapchat: Bool {
+        #if canImport(SCSDKCreativeKit)
+        return SnapchatAuthService().isAvailable && shareImage != nil
+        #else
+        return false
+        #endif
+    }
+
+    private func shareToSnapchat() {
+        #if canImport(SCSDKCreativeKit)
+        guard let shareImage else { return }
+        let photo = SCSDKSnapPhoto(image: shareImage)
+        let content = SCSDKPhotoSnapContent(snapPhoto: photo)
+        content.caption = "Meet me midway 📍"
+        SCSDKSnapAPI().startSending(content)
+        #endif
+    }
 
     private func openInMaps() {
         let placemark = MKPlacemark(coordinate: meetup.coordinate.clCoordinate)

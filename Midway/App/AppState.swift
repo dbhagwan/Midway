@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UserNotifications
 
 /// Central observable state. All data flows through a `MidwayBackend`:
 /// the Vapor server when MIDWAY_API_URL is configured, otherwise the
@@ -10,6 +11,7 @@ final class AppState: ObservableObject {
     @Published var friends: [Friend] = []
     @Published var meetups: [Meetup] = []
     @Published var invites: [MeetupInvite] = []
+    @Published var pendingVoteInvites: [VotePending] = []
     @Published var hasCompletedOnboarding = false
     @Published var isRestoring = true
 
@@ -17,6 +19,7 @@ final class AppState: ObservableObject {
     @Published var pendingPlannerRequest = false
 
     let auth: AuthService
+    let appleAuth = AppleAuthService()
     let backend: MidwayBackend
     let locationService = LocationService()
 
@@ -51,8 +54,9 @@ final class AppState: ObservableObject {
         await refresh()
     }
 
-    func signIn() async throws {
-        let identity = try await auth.signIn()
+    func signIn(with provider: AuthProvider = .snapchat) async throws {
+        let service: AuthService = provider == .apple ? appleAuth : auth
+        let identity = try await service.signIn()
         let profile = try await backend.signIn(as: identity)
         self.profile = profile
         hasCompletedOnboarding = UserDefaults.standard.bool(forKey: onboardingKey(for: profile))
@@ -88,12 +92,54 @@ final class AppState: ObservableObject {
         Task { try? await backend.updateProfile(profile) }
     }
 
-    /// Re-pull friends, meetups, and pending invites.
+    /// Re-pull friends, meetups, invites, and pending votes.
     func refresh() async {
         guard profile != nil else { return }
         if let updated = try? await backend.friends() { friends = updated }
         if let updated = try? await backend.meetups() { meetups = updated }
         if let updated = try? await backend.pendingInvites() { invites = updated }
+        if let updated = try? await backend.pendingVotes() { pendingVoteInvites = updated }
+    }
+
+    // MARK: - Push & reminders
+
+    /// Ask for notification permission and register with APNs. Remote mode
+    /// only — the demo backend has nobody to push to.
+    func enableNotifications() {
+        guard backend is RemoteBackend, !TestEnvironment.isUITest else { return }
+        Task {
+            let granted = try? await UNUserNotificationCenter.current()
+                .requestAuthorization(options: [.alert, .sound, .badge])
+            if granted == true {
+                UIApplication.shared.registerForRemoteNotifications()
+            }
+        }
+    }
+
+    func handleDeviceToken(_ data: Data) {
+        let token = data.map { String(format: "%02x", $0) }.joined()
+        Task { await backend.registerDeviceToken(token) }
+    }
+
+    /// Local "time to leave" reminder, scheduled with provisional auth so
+    /// it never interrupts with a permission dialog.
+    private func scheduleLeaveReminder(for meetup: Meetup) {
+        guard !TestEnvironment.isUITest else { return }
+        let fireDate = meetup.time.addingTimeInterval(-45 * 60)
+        guard fireDate > Date() else { return }
+
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound, .provisional]) { granted, _ in
+            guard granted else { return }
+            let content = UNMutableNotificationContent()
+            content.title = "Time to head out soon"
+            content.body = "\(meetup.title) at \(meetup.time.formatted(date: .omitted, time: .shortened))."
+            content.sound = .default
+            let trigger = UNTimeIntervalNotificationTrigger(
+                timeInterval: fireDate.timeIntervalSinceNow, repeats: false)
+            center.add(UNNotificationRequest(identifier: "meetup-\(meetup.id)",
+                                             content: content, trigger: trigger))
+        }
     }
 
     // MARK: - Friends
@@ -111,6 +157,28 @@ final class AppState: ObservableObject {
             try? await backend.respondToFriendRequest(friend, accept: accept)
             await refresh()
         }
+    }
+
+    func block(_ friend: Friend, report: Bool) {
+        friends.removeAll { $0.id == friend.id }
+        Task {
+            try? await backend.blockUser(friend.id, report: report)
+            await refresh()
+        }
+    }
+
+    func deleteAccount() async throws {
+        try await backend.deleteAccount()
+        if let profile {
+            UserDefaults.standard.removeObject(forKey: onboardingKey(for: profile))
+        }
+        auth.signOut()
+        profile = nil
+        friends = []
+        meetups = []
+        invites = []
+        pendingVoteInvites = []
+        hasCompletedOnboarding = false
     }
 
     func addFriend(username: String) {
@@ -184,6 +252,7 @@ final class AppState: ObservableObject {
                             type: session.request.type,
                             attendeeNames: attendeeNames)
         try await backend.confirmMeetup(sessionID: session.id, meetup: meetup)
+        scheduleLeaveReminder(for: meetup)
         await refresh()
         return meetup
     }

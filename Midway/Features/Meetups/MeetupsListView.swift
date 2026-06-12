@@ -6,6 +6,7 @@ struct MeetupsListView: View {
     @EnvironmentObject private var appState: AppState
     @Binding var showPlanner: Bool
     @State private var respondingTo: MeetupInvite?
+    @State private var votingOn: VotePending?
 
     private var upcoming: [Meetup] {
         appState.meetups.filter { $0.time >= Date() }.sorted { $0.time < $1.time }
@@ -44,6 +45,9 @@ struct MeetupsListView: View {
             .sheet(item: $respondingTo) { invite in
                 InviteRespondView(invite: invite)
             }
+            .sheet(item: $votingOn) { pending in
+                VoteView(pending: pending)
+            }
             .refreshable {
                 await appState.refresh()
             }
@@ -57,6 +61,33 @@ struct MeetupsListView: View {
 
     @ViewBuilder
     private var content: some View {
+        if !appState.pendingVoteInvites.isEmpty {
+            SectionLabel(text: "Vote on spots")
+            ForEach(appState.pendingVoteInvites) { pending in
+                Button {
+                    votingOn = pending
+                } label: {
+                    HStack(spacing: 14) {
+                        AvatarView(name: pending.organizerName, size: 48)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("\(pending.organizerName) found spots")
+                                .font(.headline)
+                                .foregroundStyle(.primary)
+                            Text("\(pending.type.label) · pick your favorite")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text("Vote")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.midwayTeal)
+                    }
+                    .glassCard()
+                }
+                .buttonStyle(.plain)
+            }
+        }
+
         if !appState.invites.isEmpty {
             SectionLabel(text: "Invites")
             ForEach(appState.invites) { invite in

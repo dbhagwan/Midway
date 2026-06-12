@@ -31,6 +31,14 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+    entitlements:
+      path: Midway/Support/Midway.entitlements
+      properties:
+        com.apple.developer.applesignin:
+          - Default
+        com.apple.developer.associated-domains:
+          - applinks:midway.app
+        aps-environment: development
     info:
       path: Midway/Support/Info.plist
       properties:

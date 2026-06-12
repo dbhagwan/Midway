@@ -32,6 +32,31 @@ struct PlannerSession: Hashable, Identifiable {
     var request: MeetupRequest
 }
 
+/// A published option the group can vote on (server-assigned ID).
+struct VotableSuggestion: Codable, Identifiable, Hashable {
+    var id: UUID
+    var rank: Int
+    var venueName: String
+    var areaName: String
+    var category: String
+    var coordinate: Coordinate
+    var time: Date
+    var explanation: String
+    var fairnessScore: Double
+    var interestScore: Double
+    var budgetFitScore: Double
+    var voterNames: [String]
+    var myVote: Bool
+}
+
+/// A session waiting for the current user's vote.
+struct VotePending: Codable, Identifiable, Hashable {
+    var id: UUID            // session ID
+    var organizerName: String
+    var type: MeetupType
+    var createdAt: Date
+}
+
 enum BackendError: LocalizedError {
     case notSignedIn
     case server(String)
@@ -72,10 +97,19 @@ protocol MidwayBackend {
     func confirmMeetup(sessionID: UUID, meetup: Meetup) async throws
     func meetups() async throws -> [Meetup]
     func deleteMeetup(_ id: UUID) async
-}
 
-extension MidwayBackend {
-    // Deleting history is local-only for now; the server keeps the record
-    // for other attendees.
-    func deleteMeetup(_ id: UUID) async {}
+    // Voting on published options
+    func publishSuggestions(sessionID: UUID, _ suggestions: [MeetupSuggestion]) async throws
+    func votableSuggestions(sessionID: UUID) async throws -> [VotableSuggestion]
+    func castVote(sessionID: UUID, suggestionID: UUID) async throws
+    func pendingVotes() async throws -> [VotePending]
+
+    // Lifecycle & presence
+    func cancelSession(_ id: UUID) async
+    func sendOnMyWay(meetupID: UUID) async
+
+    // Devices & safety
+    func registerDeviceToken(_ token: String) async
+    func blockUser(_ userID: UUID, report: Bool) async throws
+    func deleteAccount() async throws
 }

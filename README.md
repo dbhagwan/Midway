@@ -112,21 +112,30 @@ scores, per-person travel minutes by transport mode, and the explanation.
   Midway-owned and stored locally (JSON store, shaped like the future
   backend contract).
 
-## Current boundaries
+## Shipped feature set
 
-- Invite delivery is **polling-based** (pull-to-refresh / on-appear); APNs
-  push is the next infrastructure step.
-- Snap Login Kit tokens are not yet verified server-side (`AuthController`
-  marks where Snap's `/me` verification belongs before production).
-- Tokens are stored in UserDefaults pending a Keychain move.
-- Venue price levels aren't exposed by MapKit, so unknown prices score
-  neutral in budget fit.
-- Sign in with Apple fallback, group chat, and recurring plans are
-  deliberately deferred.
+- **Push**: APNs delivery for invites, responses, votes, confirmations,
+  cancellations, and "on my way" (configure `APNS_KEY_P8`, `APNS_KEY_ID`,
+  `APNS_TEAM_ID`, `APNS_TOPIC` on the server; logs as a no-op otherwise).
+  Device registration at `POST /v1/devices`. Local "time to leave"
+  reminders are scheduled on-device with provisional authorization.
+- **Group voting**: the organizer's ranked options are published to the
+  session; participants vote from a "Vote on spots" card on home; live
+  tallies (with voter faces) appear on the organizer's suggestion carousel.
+- **Compliance**: Sign in with Apple alongside Snapchat, block & report
+  from any friend card, and full account deletion (`DELETE /v1/me`).
+  API tokens live in the Keychain.
+- **Sharing**: meetup cards render to a branded image — system share sheet
+  everywhere, plus "Send as a Snap" via Creative Kit when Snap is
+  configured. Universal links (`https://midway.app/add/<username>`) with
+  the AASA file served by the backend.
+- **Deploy**: `Server/Dockerfile` (static release build); set
+  `DATABASE_URL` for Postgres in production, SQLite otherwise.
 
-## Roadmap
+## Remaining before App Store submission
 
-1. APNs push for invites and confirmations (replace polling).
-2. Server-side Snap token verification + Keychain token storage.
-3. Sign in with Apple as an alternate identity.
-4. Live Activities for "leave now" nudges; RSVP follow-through.
+- Verify Snap/Apple identity tokens server-side (marked in `AuthController`).
+- Replace `TEAMID` in the AASA route and entitlements with the real team ID;
+  point `midway.app` at the deployed server.
+- Venue price/hours via a places API (budget fit is neutral on unknown).
+- TestFlight beta, crash reporting, privacy policy URL + nutrition labels.

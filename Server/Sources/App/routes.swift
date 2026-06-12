@@ -15,6 +15,17 @@ struct UserTokenAuthenticator: AsyncBearerAuthenticator {
 func routes(_ app: Application) throws {
     app.get("healthz") { _ in ["status": "ok"] }
 
+    // Universal links (https://midway.app/add/<username> etc.). Replace
+    // TEAMID with the real Apple Team ID before going live.
+    app.get(".well-known", "apple-app-site-association") { _ -> Response in
+        let aasa = """
+        {"applinks":{"apps":[],"details":[{"appID":"TEAMID.com.midway.app","paths":["/add/*","/invite/*"]}]}}
+        """
+        return Response(status: .ok,
+                        headers: ["Content-Type": "application/json"],
+                        body: .init(string: aasa))
+    }
+
     let v1 = app.grouped("v1")
     try v1.register(collection: AuthController())
 
@@ -22,6 +33,48 @@ func routes(_ app: Application) throws {
     try protected.register(collection: ProfileController())
     try protected.register(collection: FriendsController())
     try protected.register(collection: MeetupsController())
+    try protected.register(collection: DevicesController())
+}
+
+// MARK: - Safety helpers
+
+/// True if either user has blocked the other.
+func isBlocked(between a: UUID, and b: UUID, on db: Database) async throws -> Bool {
+    try await BlockedUser.query(on: db)
+        .group(.or) { or in
+            or.group(.and) { and in
+                and.filter(\.$blocker.$id == a)
+                and.filter(\.$blocked.$id == b)
+            }
+            or.group(.and) { and in
+                and.filter(\.$blocker.$id == b)
+                and.filter(\.$blocked.$id == a)
+            }
+        }
+        .count() > 0
+}
+
+// MARK: - Devices
+
+struct DevicesController: RouteCollection {
+    func boot(routes: RoutesBuilder) throws {
+        routes.post("devices", use: register)
+    }
+
+    func register(req: Request) async throws -> HTTPStatus {
+        let myID = try req.auth.require(User.self).requireID()
+        let body = try req.content.decode(DeviceBody.self)
+        // Re-registration moves the token to the latest account.
+        if let existing = try await DeviceToken.query(on: req.db)
+            .filter(\.$token == body.token)
+            .first() {
+            existing.$user.id = myID
+            try await existing.save(on: req.db)
+        } else {
+            try await DeviceToken(userID: myID, token: body.token).create(on: req.db)
+        }
+        return .ok
+    }
 }
 
 // MARK: - Auth
@@ -87,6 +140,49 @@ struct ProfileController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
         routes.get("me", use: me)
         routes.put("me", use: update)
+        routes.delete("me", use: deleteAccount)
+    }
+
+    /// App Store-required account deletion: removes the user and all
+    /// Midway-owned data. Confirmed meetup cards keep only the display-name
+    /// snapshot other attendees already had.
+    func deleteAccount(req: Request) async throws -> HTTPStatus {
+        let me = try req.auth.require(User.self)
+        let myID = try me.requireID()
+
+        try await UserToken.query(on: req.db).filter(\.$user.$id == myID).delete()
+        try await DeviceToken.query(on: req.db).filter(\.$user.$id == myID).delete()
+        try await Vote.query(on: req.db).filter(\.$user.$id == myID).delete()
+        try await FriendEdge.query(on: req.db)
+            .group(.or) { or in
+                or.filter(\.$requester.$id == myID)
+                or.filter(\.$recipient.$id == myID)
+            }
+            .delete()
+        try await BlockedUser.query(on: req.db)
+            .group(.or) { or in
+                or.filter(\.$blocker.$id == myID)
+                or.filter(\.$blocked.$id == myID)
+            }
+            .delete()
+        try await SessionParticipant.query(on: req.db).filter(\.$user.$id == myID).delete()
+
+        // Remove sessions this user organized (cards in confirmed_meetups
+        // have no FK and survive for the other attendees).
+        let organized = try await MeetupSession.query(on: req.db)
+            .filter(\.$organizer.$id == myID)
+            .all()
+        for session in organized {
+            let sessionID = try session.requireID()
+            try await Vote.query(on: req.db).filter(\.$sessionID == sessionID).delete()
+            try await SuggestionOption.query(on: req.db).filter(\.$sessionID == sessionID).delete()
+            try await SessionParticipant.query(on: req.db)
+                .filter(\.$session.$id == sessionID).delete()
+            try await session.delete(on: req.db)
+        }
+
+        try await me.delete(on: req.db)
+        return .ok
     }
 
     func me(req: Request) async throws -> UserDTO {
@@ -128,6 +224,39 @@ struct FriendsController: RouteCollection {
         routes.get("friends", use: list)
         routes.post("friends", "requests", use: send)
         routes.post("friends", "requests", ":edgeID", use: respond)
+        routes.post("users", ":userID", "block", use: block)
+    }
+
+    /// Block (and optionally report) a user: severs the friend edge and
+    /// prevents requests/invites in either direction.
+    func block(req: Request) async throws -> HTTPStatus {
+        let myID = try req.auth.require(User.self).requireID()
+        guard let targetID = req.parameters.get("userID", as: UUID.self),
+              targetID != myID,
+              try await User.find(targetID, on: req.db) != nil else {
+            throw Abort(.notFound)
+        }
+        let body = (try? req.content.decode(BlockBody.self)) ?? BlockBody(report: false, reason: nil)
+
+        try await FriendEdge.query(on: req.db)
+            .group(.or) { or in
+                or.group(.and) { and in
+                    and.filter(\.$requester.$id == myID)
+                    and.filter(\.$recipient.$id == targetID)
+                }
+                or.group(.and) { and in
+                    and.filter(\.$requester.$id == targetID)
+                    and.filter(\.$recipient.$id == myID)
+                }
+            }
+            .delete()
+
+        if try await !isBlocked(between: myID, and: targetID, on: req.db) || body.report {
+            try await BlockedUser(blockerID: myID, blockedID: targetID,
+                                  isReport: body.report, reason: body.reason)
+                .create(on: req.db)
+        }
+        return .ok
     }
 
     func list(req: Request) async throws -> FriendListResponse {
@@ -174,6 +303,11 @@ struct FriendsController: RouteCollection {
             throw Abort(.notFound, reason: "No Midway user named @\(username).")
         }
         let otherID = try other.requireID()
+
+        // Blocked pairs look like "not found" — don't leak block state.
+        if try await isBlocked(between: myID, and: otherID, on: req.db) {
+            throw Abort(.notFound, reason: "No Midway user named @\(username).")
+        }
 
         let existing = try await FriendEdge.query(on: req.db)
             .group(.or) { or in
@@ -228,8 +362,15 @@ struct MeetupsController: RouteCollection {
         routes.post("meetups", use: create)
         routes.get("meetups", "invites", use: invites)
         routes.get("meetups", "confirmed", use: confirmedList)
+        routes.delete("meetups", "confirmed", ":meetupID", use: deleteConfirmed)
+        routes.post("meetups", "confirmed", ":meetupID", "onmyway", use: onMyWay)
+        routes.get("meetups", "votes", "pending", use: pendingVotes)
         routes.get("meetups", ":sessionID", use: state)
         routes.post("meetups", ":sessionID", "respond", use: respond)
+        routes.post("meetups", ":sessionID", "suggestions", use: publishSuggestions)
+        routes.get("meetups", ":sessionID", "suggestions", use: listSuggestions)
+        routes.post("meetups", ":sessionID", "vote", use: vote)
+        routes.post("meetups", ":sessionID", "cancel", use: cancel)
         routes.post("meetups", ":sessionID", "confirm", use: confirm)
     }
 
@@ -268,9 +409,17 @@ struct MeetupsController: RouteCollection {
         try await mine.create(on: req.db)
 
         for userID in Set(body.participantUserIDs) {
+            // Blocked users silently don't receive invites.
+            if try await isBlocked(between: myID, and: userID, on: req.db) { continue }
             try await SessionParticipant(sessionID: sessionID, userID: userID)
                 .create(on: req.db)
         }
+
+        await req.application.push.send(
+            title: "\(me.displayName) wants to meet up",
+            body: "\(body.type.capitalized) · \(body.windowKind). Share your availability.",
+            payload: ["kind": "invite", "sessionID": sessionID.uuidString],
+            to: body.participantUserIDs, on: req.db)
 
         return try await dto(for: session, on: req.db)
     }
@@ -323,7 +472,217 @@ struct MeetupsController: RouteCollection {
         if pending == 0 {
             session.status = SessionStatus.ready.rawValue
             try await session.save(on: req.db)
+            let sessionID = try session.requireID()
+            await req.application.push.send(
+                title: "Everyone's in",
+                body: "All responses are in — Midway is ready to rank spots.",
+                payload: ["kind": "ready", "sessionID": sessionID.uuidString],
+                to: [session.$organizer.id], on: req.db)
         }
+        return .ok
+    }
+
+    // MARK: Voting
+
+    /// Organizer publishes the device-ranked options so the group can vote.
+    func publishSuggestions(req: Request) async throws -> HTTPStatus {
+        let myID = try req.auth.require(User.self).requireID()
+        let session = try await find(req)
+        guard session.$organizer.id == myID else { throw Abort(.forbidden) }
+        guard session.status == SessionStatus.ready.rawValue
+                || session.status == SessionStatus.voting.rawValue else {
+            throw Abort(.conflict, reason: "Not ready for suggestions yet.")
+        }
+        let uploads = try req.content.decode([SuggestionUpload].self)
+        let sessionID = try session.requireID()
+
+        try await Vote.query(on: req.db).filter(\.$sessionID == sessionID).delete()
+        try await SuggestionOption.query(on: req.db).filter(\.$sessionID == sessionID).delete()
+        for upload in uploads {
+            let option = SuggestionOption()
+            option.sessionID = sessionID
+            option.rank = upload.rank
+            option.venueName = upload.venueName
+            option.areaName = upload.areaName
+            option.category = upload.category
+            option.lat = upload.lat
+            option.lon = upload.lon
+            option.time = upload.time
+            option.explanation = upload.explanation
+            option.fairness = upload.fairness
+            option.interest = upload.interest
+            option.budgetFit = upload.budgetFit
+            try await option.create(on: req.db)
+        }
+
+        session.status = SessionStatus.voting.rawValue
+        try await session.save(on: req.db)
+
+        let others = try await participantIDs(of: sessionID, on: req.db, excluding: myID)
+        await req.application.push.send(
+            title: "Vote on where to meet",
+            body: "Midway found \(uploads.count) fair options — pick your favorite.",
+            payload: ["kind": "vote", "sessionID": sessionID.uuidString],
+            to: others, on: req.db)
+        return .ok
+    }
+
+    func listSuggestions(req: Request) async throws -> [SuggestionOptionDTO] {
+        let myID = try req.auth.require(User.self).requireID()
+        let session = try await find(req)
+        let sessionID = try session.requireID()
+        guard try await isMember(myID, of: sessionID, on: req.db) else {
+            throw Abort(.forbidden)
+        }
+
+        let options = try await SuggestionOption.query(on: req.db)
+            .filter(\.$sessionID == sessionID)
+            .sort(\.$rank)
+            .all()
+        let votes = try await Vote.query(on: req.db)
+            .filter(\.$sessionID == sessionID)
+            .with(\.$user)
+            .all()
+
+        return try options.map { option in
+            let optionID = try option.requireID()
+            let voters = votes.filter { $0.suggestionID == optionID }
+            return SuggestionOptionDTO(
+                id: optionID, rank: option.rank,
+                venueName: option.venueName, areaName: option.areaName,
+                category: option.category, lat: option.lat, lon: option.lon,
+                time: option.time, explanation: option.explanation,
+                fairness: option.fairness, interest: option.interest,
+                budgetFit: option.budgetFit,
+                voterNames: voters.map {
+                    $0.user.displayName.components(separatedBy: " ").first ?? $0.user.displayName
+                },
+                myVote: voters.contains { $0.$user.id == myID }
+            )
+        }
+    }
+
+    func vote(req: Request) async throws -> HTTPStatus {
+        let me = try req.auth.require(User.self)
+        let myID = try me.requireID()
+        let session = try await find(req)
+        let sessionID = try session.requireID()
+        guard session.status == SessionStatus.voting.rawValue else {
+            throw Abort(.conflict, reason: "Voting isn't open on this plan.")
+        }
+        guard try await isMember(myID, of: sessionID, on: req.db) else {
+            throw Abort(.forbidden)
+        }
+        let body = try req.content.decode(VoteBody.self)
+        guard let option = try await SuggestionOption.find(body.suggestionID, on: req.db),
+              option.sessionID == sessionID else {
+            throw Abort(.notFound)
+        }
+
+        // One vote per person; re-voting replaces it.
+        try await Vote.query(on: req.db)
+            .filter(\.$sessionID == sessionID)
+            .filter(\.$user.$id == myID)
+            .delete()
+        try await Vote(sessionID: sessionID, suggestionID: body.suggestionID, userID: myID)
+            .create(on: req.db)
+
+        if session.$organizer.id != myID {
+            await req.application.push.send(
+                title: "\(me.displayName) voted",
+                body: "\(option.venueName) got a vote.",
+                payload: ["kind": "voted", "sessionID": sessionID.uuidString],
+                to: [session.$organizer.id], on: req.db)
+        }
+        return .ok
+    }
+
+    /// Sessions where I can vote but haven't yet.
+    func pendingVotes(req: Request) async throws -> [VotePendingDTO] {
+        let myID = try req.auth.require(User.self).requireID()
+        let rows = try await SessionParticipant.query(on: req.db)
+            .filter(\.$user.$id == myID)
+            .with(\.$session) { $0.with(\.$organizer) }
+            .all()
+        var result: [VotePendingDTO] = []
+        for row in rows {
+            let session = row.session
+            guard session.status == SessionStatus.voting.rawValue,
+                  session.$organizer.id != myID,
+                  row.isAvailable == true,
+                  let sessionID = session.id else { continue }
+            let voted = try await Vote.query(on: req.db)
+                .filter(\.$sessionID == sessionID)
+                .filter(\.$user.$id == myID)
+                .count() > 0
+            if !voted {
+                result.append(VotePendingDTO(sessionID: sessionID,
+                                             organizerName: session.organizer.displayName,
+                                             type: session.type,
+                                             createdAt: session.createdAt))
+            }
+        }
+        return result
+    }
+
+    // MARK: Lifecycle
+
+    func cancel(req: Request) async throws -> HTTPStatus {
+        let myID = try req.auth.require(User.self).requireID()
+        let session = try await find(req)
+        guard session.$organizer.id == myID else { throw Abort(.forbidden) }
+        guard session.status != SessionStatus.confirmed.rawValue else {
+            throw Abort(.conflict, reason: "Already confirmed — delete the meetup instead.")
+        }
+        session.status = SessionStatus.cancelled.rawValue
+        try await session.save(on: req.db)
+
+        let sessionID = try session.requireID()
+        let others = try await participantIDs(of: sessionID, on: req.db, excluding: myID)
+        await req.application.push.send(
+            title: "Plan cancelled",
+            body: "The \(session.type) plan was called off.",
+            payload: ["kind": "cancelled", "sessionID": sessionID.uuidString],
+            to: others, on: req.db)
+        return .ok
+    }
+
+    func deleteConfirmed(req: Request) async throws -> HTTPStatus {
+        let myID = try req.auth.require(User.self).requireID()
+        guard let meetupID = req.parameters.get("meetupID", as: UUID.self),
+              let meetup = try await ConfirmedMeetup.find(meetupID, on: req.db),
+              let session = try await MeetupSession.find(meetup.sessionID, on: req.db) else {
+            throw Abort(.notFound)
+        }
+        guard session.$organizer.id == myID else { throw Abort(.forbidden) }
+
+        let others = try await participantIDs(of: meetup.sessionID, on: req.db, excluding: myID)
+        try await meetup.delete(on: req.db)
+        await req.application.push.send(
+            title: "Meetup cancelled",
+            body: "\(meetup.title) was cancelled.",
+            payload: ["kind": "meetupCancelled", "meetupID": meetupID.uuidString],
+            to: others, on: req.db)
+        return .ok
+    }
+
+    /// Lightweight presence signal: tells the other attendees you've left.
+    func onMyWay(req: Request) async throws -> HTTPStatus {
+        let me = try req.auth.require(User.self)
+        let myID = try me.requireID()
+        guard let meetupID = req.parameters.get("meetupID", as: UUID.self),
+              let meetup = try await ConfirmedMeetup.find(meetupID, on: req.db) else {
+            throw Abort(.notFound)
+        }
+        guard try await isMember(myID, of: meetup.sessionID, on: req.db) else {
+            throw Abort(.forbidden)
+        }
+        let others = try await participantIDs(of: meetup.sessionID, on: req.db, excluding: myID)
+        await req.application.push.send(
+            title: "\(me.displayName) is on the way",
+            body: "Heading to \(meetup.venueName) 🏃",
+            payload: ["kind": "onMyWay", "meetupID": meetupID.uuidString],
+            to: others, on: req.db)
         return .ok
     }
 
@@ -379,6 +738,14 @@ struct MeetupsController: RouteCollection {
 
         session.status = SessionStatus.confirmed.rawValue
         try await session.save(on: req.db)
+
+        let sessionID = try session.requireID()
+        let others = try await participantIDs(of: sessionID, on: req.db, excluding: myID)
+        await req.application.push.send(
+            title: "It's a plan!",
+            body: "\(body.title) — see you there.",
+            payload: ["kind": "confirmed", "sessionID": sessionID.uuidString],
+            to: others, on: req.db)
         return try MeetupDTO(meetup)
     }
 
@@ -404,6 +771,22 @@ struct MeetupsController: RouteCollection {
             throw Abort(.notFound)
         }
         return session
+    }
+
+    private func isMember(_ userID: UUID, of sessionID: UUID, on db: Database) async throws -> Bool {
+        try await SessionParticipant.query(on: db)
+            .filter(\.$session.$id == sessionID)
+            .filter(\.$user.$id == userID)
+            .count() > 0
+    }
+
+    private func participantIDs(of sessionID: UUID, on db: Database,
+                                excluding userID: UUID) async throws -> [UUID] {
+        try await SessionParticipant.query(on: db)
+            .filter(\.$session.$id == sessionID)
+            .all()
+            .map { $0.$user.id }
+            .filter { $0 != userID }
     }
 
     private func apply(_ body: ParticipantResponseBody, to row: SessionParticipant) {

@@ -77,7 +77,18 @@ struct FriendsView: View {
             }
         }
         .glassCard()
-    }
+        .contextMenu {
+            Button(role: .destructive) {
+                appState.block(friend, report: false)
+            } label: {
+                Label("Block \(friend.displayName)", systemImage: "hand.raised")
+            }
+            Button(role: .destructive) {
+                appState.block(friend, report: true)
+            } label: {
+                Label("Block & report", systemImage: "exclamationmark.bubble")
+            }
+        }
 
     private func requestCard(_ friend: Friend) -> some View {
         HStack(spacing: 14) {

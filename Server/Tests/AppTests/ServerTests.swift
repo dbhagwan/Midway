@@ -209,6 +209,156 @@ final class ServerTests: XCTestCase {
         })
     }
 
+    func testVotingFlow() throws {
+        let ava = try login("Ava")
+        let leo = try login("Leo")
+        try befriend(ava, leo)
+
+        var sessionID: UUID?
+        try app.test(.POST, "v1/meetups", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: ava.token)
+            try req.content.encode(CreateMeetupBody(
+                participantUserIDs: [leo.user.id],
+                type: "drinks", windowKind: "tonight", customStart: nil,
+                maxBudget: nil, indoorOutdoor: "either", dietary: [], vibe: "",
+                maxTravelMinutes: nil,
+                organizerResponse: ParticipantResponseBody(
+                    isAvailable: true, sharing: "approximate",
+                    lat: 37.76, lon: -122.42, manualPlaceName: nil)))
+        }, afterResponse: { res in
+            sessionID = try res.content.decode(SessionDTO.self).id
+        })
+        try app.test(.POST, "v1/meetups/\(sessionID!)/respond", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: leo.token)
+            try req.content.encode(ParticipantResponseBody(
+                isAvailable: true, sharing: "approximate",
+                lat: 37.74, lon: -122.48, manualPlaceName: nil))
+        })
+
+        // Organizer publishes ranked options.
+        let uploads = [
+            SuggestionUpload(rank: 1, venueName: "The Page", areaName: "Lower Haight",
+                             category: "Bar", lat: 37.772, lon: -122.43,
+                             time: Date().addingTimeInterval(7200),
+                             explanation: "Fair for both.", fairness: 0.9,
+                             interest: 0.6, budgetFit: 1.0),
+            SuggestionUpload(rank: 2, venueName: "Zeitgeist", areaName: "Mission",
+                             category: "Bar", lat: 37.770, lon: -122.422,
+                             time: Date().addingTimeInterval(7200),
+                             explanation: "Lively option.", fairness: 0.7,
+                             interest: 0.8, budgetFit: 0.9),
+        ]
+        try app.test(.POST, "v1/meetups/\(sessionID!)/suggestions", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: ava.token)
+            try req.content.encode(uploads)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+        })
+
+        // Leo sees a pending vote, votes, and the tally shows up for Ava.
+        var optionID: UUID?
+        try app.test(.GET, "v1/meetups/votes/pending", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: leo.token)
+        }, afterResponse: { res in
+            let pending = try res.content.decode([VotePendingDTO].self)
+            XCTAssertEqual(pending.count, 1)
+            XCTAssertEqual(pending.first?.organizerName, "Ava")
+        })
+        try app.test(.GET, "v1/meetups/\(sessionID!)/suggestions", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: leo.token)
+        }, afterResponse: { res in
+            optionID = try res.content.decode([SuggestionOptionDTO].self).first?.id
+        })
+        try app.test(.POST, "v1/meetups/\(sessionID!)/vote", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: leo.token)
+            try req.content.encode(VoteBody(suggestionID: optionID!))
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+        })
+        try app.test(.GET, "v1/meetups/\(sessionID!)/suggestions", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: ava.token)
+        }, afterResponse: { res in
+            let options = try res.content.decode([SuggestionOptionDTO].self)
+            XCTAssertEqual(options.first?.voterNames, ["Leo"])
+            XCTAssertEqual(options.last?.voterNames, [])
+        })
+
+        // Confirm still works from the voting state.
+        try app.test(.POST, "v1/meetups/\(sessionID!)/confirm", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: ava.token)
+            try req.content.encode(Self.confirmBody)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+        })
+    }
+
+    func testBlockSeversAndPreventsContact() throws {
+        let ava = try login("Ava")
+        let leo = try login("Leo")
+        try befriend(ava, leo)
+
+        try app.test(.POST, "v1/users/\(ava.user.id)/block", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: leo.token)
+            try req.content.encode(BlockBody(report: true, reason: "spam"))
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+        })
+
+        // Edge is gone for both.
+        try app.test(.GET, "v1/friends", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: ava.token)
+        }, afterResponse: { res in
+            XCTAssertEqual(try res.content.decode(FriendListResponse.self).friends.count, 0)
+        })
+
+        // Ava can't re-request (reads as not-found, no block leak).
+        try app.test(.POST, "v1/friends/requests", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: ava.token)
+            try req.content.encode(FriendRequestBody(username: "leo"))
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .notFound)
+        })
+    }
+
+    func testAccountDeletion() throws {
+        let ava = try login("Ava")
+        let leo = try login("Leo")
+        try befriend(ava, leo)
+
+        try app.test(.DELETE, "v1/me", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: ava.token)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+        })
+
+        // Token is dead, Leo's friend list is empty, and a fresh login
+        // creates a brand-new account.
+        try app.test(.GET, "v1/me", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: ava.token)
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .unauthorized)
+        })
+        try app.test(.GET, "v1/friends", beforeRequest: { req in
+            req.headers.bearerAuthorization = .init(token: leo.token)
+        }, afterResponse: { res in
+            XCTAssertEqual(try res.content.decode(FriendListResponse.self).friends.count, 0)
+        })
+        let reborn = try login("Ava")
+        XCTAssertNotEqual(reborn.user.id, ava.user.id)
+    }
+
+    func testDeviceRegistrationIsIdempotent() throws {
+        let ava = try login("Ava")
+        for _ in 0..<2 {
+            try app.test(.POST, "v1/devices", beforeRequest: { req in
+                req.headers.bearerAuthorization = .init(token: ava.token)
+                try req.content.encode(DeviceBody(token: "abc123"))
+            }, afterResponse: { res in
+                XCTAssertEqual(res.status, .ok)
+            })
+        }
+    }
+
     private static let confirmBody = ConfirmMeetupBody(
         title: "Coffee at Ritual", venueName: "Ritual Coffee Roasters",
         areaName: "Hayes Valley", lat: 37.776, lon: -122.423,

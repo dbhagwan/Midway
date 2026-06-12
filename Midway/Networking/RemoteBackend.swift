@@ -25,10 +25,9 @@ final class RemoteBackend: MidwayBackend {
         decoder.dateDecodingStrategy = .iso8601
     }
 
-    // TODO: move the token to the Keychain before shipping.
     private var token: String? {
-        get { UserDefaults.standard.string(forKey: Self.tokenKey) }
-        set { UserDefaults.standard.set(newValue, forKey: Self.tokenKey) }
+        get { KeychainStore.string(for: Self.tokenKey) }
+        set { KeychainStore.set(newValue, for: Self.tokenKey) }
     }
 
     private var storedIdentity: AuthenticatedUser? {
@@ -184,6 +183,80 @@ final class RemoteBackend: MidwayBackend {
     func meetups() async throws -> [Meetup] {
         let dtos: [MeetupDTO] = try await get("v1/meetups/confirmed")
         return dtos.map { $0.meetup }
+    }
+
+    func deleteMeetup(_ id: UUID) async {
+        let _: EmptyReply? = try? await send("DELETE", "v1/meetups/confirmed/\(id)",
+                                             body: Optional<Int>.none)
+    }
+
+    // MARK: - Voting
+
+    func publishSuggestions(sessionID: UUID, _ suggestions: [MeetupSuggestion]) async throws {
+        let uploads = suggestions.enumerated().map { index, s in
+            SuggestionUploadDTO(
+                rank: index + 1, venueName: s.venueName, areaName: s.areaName,
+                category: s.category, lat: s.coordinate.latitude, lon: s.coordinate.longitude,
+                time: s.suggestedTime, explanation: s.explanation,
+                fairness: s.fairnessScore, interest: s.interestScore,
+                budgetFit: s.budgetFitScore)
+        }
+        try await postNoReply("v1/meetups/\(sessionID)/suggestions", body: uploads)
+    }
+
+    func votableSuggestions(sessionID: UUID) async throws -> [VotableSuggestion] {
+        let dtos: [SuggestionOptionDTO] = try await get("v1/meetups/\(sessionID)/suggestions")
+        return dtos.map { $0.votable }
+    }
+
+    func castVote(sessionID: UUID, suggestionID: UUID) async throws {
+        struct Body: Encodable { var suggestionID: UUID }
+        try await postNoReply("v1/meetups/\(sessionID)/vote",
+                              body: Body(suggestionID: suggestionID))
+    }
+
+    func pendingVotes() async throws -> [VotePending] {
+        struct DTO: Decodable {
+            var sessionID: UUID
+            var organizerName: String
+            var type: String
+            var createdAt: Date?
+        }
+        let dtos: [DTO] = try await get("v1/meetups/votes/pending")
+        return dtos.map {
+            VotePending(id: $0.sessionID, organizerName: $0.organizerName,
+                        type: MeetupType(rawValue: $0.type) ?? .coffee,
+                        createdAt: $0.createdAt ?? Date())
+        }
+    }
+
+    // MARK: - Lifecycle & presence
+
+    func cancelSession(_ id: UUID) async {
+        struct Empty: Encodable {}
+        try? await postNoReply("v1/meetups/\(id)/cancel", body: Empty())
+    }
+
+    func sendOnMyWay(meetupID: UUID) async {
+        struct Empty: Encodable {}
+        try? await postNoReply("v1/meetups/confirmed/\(meetupID)/onmyway", body: Empty())
+    }
+
+    // MARK: - Devices & safety
+
+    func registerDeviceToken(_ token: String) async {
+        struct Body: Encodable { var token: String }
+        try? await postNoReply("v1/devices", body: Body(token: token))
+    }
+
+    func blockUser(_ userID: UUID, report: Bool) async throws {
+        struct Body: Encodable { var report: Bool }
+        try await postNoReply("v1/users/\(userID)/block", body: Body(report: report))
+    }
+
+    func deleteAccount() async throws {
+        let _: EmptyReply = try await send("DELETE", "v1/me", body: Optional<Int>.none)
+        await signOut()
     }
 
     // MARK: - Transport
@@ -372,6 +445,47 @@ private struct SessionDTO: Decodable {
             awaitingNames: awaiting,
             declinedNames: declined
         )
+    }
+}
+
+private struct SuggestionUploadDTO: Encodable {
+    var rank: Int
+    var venueName: String
+    var areaName: String
+    var category: String
+    var lat: Double
+    var lon: Double
+    var time: Date
+    var explanation: String
+    var fairness: Double
+    var interest: Double
+    var budgetFit: Double
+}
+
+private struct SuggestionOptionDTO: Decodable {
+    var id: UUID
+    var rank: Int
+    var venueName: String
+    var areaName: String
+    var category: String
+    var lat: Double
+    var lon: Double
+    var time: Date
+    var explanation: String
+    var fairness: Double
+    var interest: Double
+    var budgetFit: Double
+    var voterNames: [String]
+    var myVote: Bool
+
+    var votable: VotableSuggestion {
+        VotableSuggestion(id: id, rank: rank, venueName: venueName, areaName: areaName,
+                          category: category,
+                          coordinate: Coordinate(latitude: lat, longitude: lon),
+                          time: time, explanation: explanation,
+                          fairnessScore: fairness, interestScore: interest,
+                          budgetFitScore: budgetFit,
+                          voterNames: voterNames, myVote: myVote)
     }
 }
 

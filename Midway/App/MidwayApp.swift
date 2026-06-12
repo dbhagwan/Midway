@@ -1,10 +1,42 @@
 import SwiftUI
+import UserNotifications
 #if canImport(SCSDKLoginKit)
 import SCSDKLoginKit
 #endif
 
+extension Notification.Name {
+    static let midwayDeviceToken = Notification.Name("midwayDeviceToken")
+    static let midwayPushTapped = Notification.Name("midwayPushTapped")
+}
+
+/// Receives APNs registration callbacks and routes notification taps.
+final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        return true
+    }
+
+    func application(_ application: UIApplication,
+                     didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        NotificationCenter.default.post(name: .midwayDeviceToken, object: deviceToken)
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        [.banner, .sound]
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse) async {
+        NotificationCenter.default.post(name: .midwayPushTapped,
+                                        object: response.notification.request.content.userInfo)
+    }
+}
+
 @main
 struct MidwayApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var appState = AppState()
 
     var body: some Scene {
@@ -14,6 +46,19 @@ struct MidwayApp: App {
                 .tint(.midwayCoral)
                 .onOpenURL { url in
                     handle(url: url)
+                }
+                .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+                    if let url = activity.webpageURL {
+                        handle(url: url)
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .midwayDeviceToken)) { note in
+                    if let data = note.object as? Data {
+                        appState.handleDeviceToken(data)
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .midwayPushTapped)) { _ in
+                    Task { await appState.refresh() }
                 }
         }
     }
@@ -25,7 +70,16 @@ struct MidwayApp: App {
             return
         }
         #endif
-        // Invite links: midway://invite?from=<username>
+
+        // Universal link: https://midway.app/add/<username>
+        if url.host == "midway.app" {
+            let parts = url.pathComponents.filter { $0 != "/" }
+            if parts.count == 2, parts[0] == "add" {
+                appState.addFriend(username: parts[1])
+            }
+            return
+        }
+        // Custom-scheme invite links: midway://invite?from=<username>
         if url.host == "invite",
            let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
            let from = components.queryItems?.first(where: { $0.name == "from" })?.value {

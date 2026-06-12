@@ -22,6 +22,7 @@ struct SuggestionsView: View {
     @State private var phase: Phase = .waiting(awaiting: [])
     @State private var participants: [PlanningParticipant] = []
     @State private var suggestions: [MeetupSuggestion] = []
+    @State private var votersByRank: [Int: [String]] = [:]
     @State private var selectedIndex = 0
     @State private var camera: MapCameraPosition = .automatic
     @State private var confirmedMeetup: Meetup?
@@ -116,6 +117,19 @@ struct SuggestionsView: View {
             focus(on: 0, animated: false)
         } catch {
             phase = .failed(error.localizedDescription)
+            return
+        }
+
+        // Publish the ranked options so the group can vote, then keep the
+        // tallies live while this screen is up.
+        try? await appState.backend.publishSuggestions(sessionID: session.id, suggestions)
+        while !Task.isCancelled, phase == .ready {
+            if let options = try? await appState.backend.votableSuggestions(sessionID: session.id) {
+                votersByRank = Dictionary(uniqueKeysWithValues: options.map {
+                    ($0.rank, $0.voterNames)
+                })
+            }
+            try? await Task.sleep(for: .seconds(3))
         }
     }
 
@@ -168,7 +182,8 @@ struct SuggestionsView: View {
                 SuggestionCard(
                     rank: index + 1,
                     suggestion: suggestion,
-                    participants: participants
+                    participants: participants,
+                    voters: votersByRank[index + 1] ?? []
                 ) {
                     confirm(suggestion)
                 }
@@ -206,6 +221,7 @@ struct SuggestionCard: View {
     let rank: Int
     let suggestion: MeetupSuggestion
     let participants: [PlanningParticipant]
+    var voters: [String] = []
     var onPick: () -> Void
 
     var body: some View {
@@ -256,6 +272,17 @@ struct SuggestionCard: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .lineLimit(3)
+
+            if !voters.isEmpty {
+                HStack(spacing: 6) {
+                    AvatarStack(names: voters, size: 20)
+                    Text(voters.count == 1
+                         ? "\(voters[0]) voted for this"
+                         : "\(voters.count) votes")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.midwayTeal)
+                }
+            }
 
             Button(action: onPick) {
                 Text("Meet here")

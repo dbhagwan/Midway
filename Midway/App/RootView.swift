@@ -41,6 +41,9 @@ struct MainTabView: View {
                 appState.pendingPlannerRequest = false
             }
         }
+        .onAppear {
+            appState.enableNotifications()
+        }
     }
 }
 

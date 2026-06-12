@@ -17,6 +17,7 @@ actor LocalDemoBackend: MidwayBackend {
         var organizer: PlanningParticipant
         var arrived: [PlanningParticipant] = []
         var pendingFriendIDs: [UUID]
+        var options: [VotableSuggestion] = []
     }
 
     private static let demoInviteID = UUID(uuidString: "00000000-0000-0000-0000-00000000A0A0")!
@@ -199,5 +200,82 @@ actor LocalDemoBackend: MidwayBackend {
     func deleteMeetup(_ id: UUID) async {
         snapshot.meetups.removeAll { $0.id == id }
         persist()
+    }
+
+    // MARK: - Voting (demo: friends vote for the top picks after a beat)
+
+    func publishSuggestions(sessionID: UUID, _ suggestions: [MeetupSuggestion]) async throws {
+        guard var session = sessions[sessionID] else { return }
+        session.options = suggestions.enumerated().map { index, s in
+            VotableSuggestion(id: UUID(), rank: index + 1,
+                              venueName: s.venueName, areaName: s.areaName,
+                              category: s.category, coordinate: s.coordinate,
+                              time: s.suggestedTime, explanation: s.explanation,
+                              fairnessScore: s.fairnessScore,
+                              interestScore: s.interestScore,
+                              budgetFitScore: s.budgetFitScore,
+                              voterNames: [], myVote: false)
+        }
+        sessions[sessionID] = session
+
+        let delay: Duration = instantResponses ? .milliseconds(300) : .seconds(2)
+        Task {
+            try? await Task.sleep(for: delay)
+            await self.deliverDemoVotes(sessionID: sessionID)
+        }
+    }
+
+    private func deliverDemoVotes(sessionID: UUID) {
+        guard var session = sessions[sessionID], !session.options.isEmpty else { return }
+        let voters = session.arrived.map(\.name)
+        for (index, voter) in voters.enumerated() {
+            // Most friends back the top pick; someone always likes #2.
+            let choice = (index == voters.count - 1 && session.options.count > 1) ? 1 : 0
+            session.options[choice].voterNames.append(voter)
+        }
+        sessions[sessionID] = session
+    }
+
+    func votableSuggestions(sessionID: UUID) async throws -> [VotableSuggestion] {
+        sessions[sessionID]?.options ?? []
+    }
+
+    func castVote(sessionID: UUID, suggestionID: UUID) async throws {
+        guard var session = sessions[sessionID],
+              let index = session.options.firstIndex(where: { $0.id == suggestionID }) else { return }
+        for i in session.options.indices {
+            session.options[i].voterNames.removeAll { $0 == "You" }
+            session.options[i].myVote = false
+        }
+        session.options[index].voterNames.append("You")
+        session.options[index].myVote = true
+        sessions[sessionID] = session
+    }
+
+    func pendingVotes() async throws -> [VotePending] {
+        []
+    }
+
+    // MARK: - Lifecycle & presence
+
+    func cancelSession(_ id: UUID) async {
+        sessions[id] = nil
+    }
+
+    func sendOnMyWay(meetupID: UUID) async {
+        // Push-only feature; nothing to do on-device in demo mode.
+    }
+
+    // MARK: - Devices & safety
+
+    func registerDeviceToken(_ token: String) async {}
+
+    func blockUser(_ userID: UUID, report: Bool) async throws {
+        snapshot.friends.removeAll { $0.id == userID }
+        persist()
+    }
+
+    func deleteAccount() async throws {
+        await signOut()
     }
 }

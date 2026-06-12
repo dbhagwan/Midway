@@ -12,6 +12,7 @@ struct AuthenticatedUser: Codable, Hashable {
 
 enum AuthProvider: String, Codable {
     case snapchat
+    case apple
     case mock
 }
 

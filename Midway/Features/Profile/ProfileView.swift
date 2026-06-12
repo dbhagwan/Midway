@@ -3,6 +3,7 @@ import SwiftUI
 struct ProfileView: View {
     @EnvironmentObject private var appState: AppState
     @State private var showInterestEditor = false
+    @State private var confirmingDeletion = false
 
     var body: some View {
         NavigationStack {
@@ -60,11 +61,23 @@ struct ProfileView: View {
                     }
 
                     Section {
-                        Button("Sign out", role: .destructive) {
+                        Button("Sign out") {
                             appState.signOut()
                         }
+                        Button("Delete account", role: .destructive) {
+                            confirmingDeletion = true
+                        }
                     } footer: {
-                        Text("Signing out removes your Midway data from this device. Snapchat only ever shares your display name, Bitmoji, and an ID with Midway.")
+                        Text("Deleting your account removes your profile, friends, and plans from Midway permanently. Snapchat only ever shares your display name, Bitmoji, and an ID with Midway.")
+                    }
+                    .confirmationDialog("Delete your Midway account?",
+                                        isPresented: $confirmingDeletion,
+                                        titleVisibility: .visible) {
+                        Button("Delete everything", role: .destructive) {
+                            Task { try? await appState.deleteAccount() }
+                        }
+                    } message: {
+                        Text("This permanently deletes your profile, friend graph, and plans. Confirmed meetup cards your friends already have keep only your name.")
                     }
                 }
                 .onMidwayBackground()
