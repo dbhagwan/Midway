@@ -11,14 +11,18 @@ struct SnapGhostShape: Shape {
         }
 
         // Right half, top-center → bottom-center; the left half mirrors it.
+        // Proportions matched against the official mark: narrow dome
+        // (head ≈ half the full width), near-vertical sides, wings that
+        // hug the body then flare to a point with a scooped underside,
+        // full bottom lobes flanking a center notch.
         let segments: [(CGPoint, CGPoint, CGPoint)] = [
             // (control1, control2, destination)
-            (p(0.66, 0.02), p(0.78, 0.12), p(0.78, 0.30)),   // dome
-            (p(0.78, 0.42), p(0.78, 0.50), p(0.79, 0.57)),   // side
-            (p(0.82, 0.61), p(0.94, 0.63), p(0.96, 0.68)),   // wing out
-            (p(0.98, 0.74), p(0.89, 0.79), p(0.78, 0.79)),   // wing curl
-            (p(0.71, 0.79), p(0.71, 0.92), p(0.62, 0.92)),   // lobe
-            (p(0.55, 0.92), p(0.56, 0.84), p(0.50, 0.84)),   // center notch
+            (p(0.65, 0.03), p(0.75, 0.13), p(0.75, 0.30)),   // dome
+            (p(0.75, 0.40), p(0.74, 0.50), p(0.74, 0.56)),   // side
+            (p(0.75, 0.67), p(0.88, 0.71), p(0.99, 0.79)),   // wing flare
+            (p(0.97, 0.87), p(0.81, 0.88), p(0.70, 0.84)),   // tip + scoop
+            (p(0.67, 0.93), p(0.68, 1.00), p(0.60, 1.00)),   // lobe
+            (p(0.54, 1.00), p(0.54, 0.89), p(0.50, 0.89)),   // center notch
         ]
 
         func mirror(_ point: CGPoint) -> CGPoint {
@@ -26,7 +30,7 @@ struct SnapGhostShape: Shape {
         }
 
         var path = Path()
-        let start = p(0.50, 0.02)
+        let start = p(0.50, 0.03)
         path.move(to: start)
         var current = start
         var drawn: [(from: CGPoint, c1: CGPoint, c2: CGPoint)] = []
