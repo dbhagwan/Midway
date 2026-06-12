@@ -1,84 +1,99 @@
 import Foundation
 import SwiftUI
 
-/// Central observable state. Backed by local JSON persistence for the MVP;
-/// the friend graph and meetup workflow are designed to move behind a
-/// Midway backend without changing the views.
+/// Central observable state. All data flows through a `MidwayBackend`:
+/// the Vapor server when MIDWAY_API_URL is configured, otherwise the
+/// on-device demo backend — the views never know the difference.
 @MainActor
 final class AppState: ObservableObject {
-    // Identity & profile
     @Published var profile: UserProfile?
-    @Published var hasCompletedOnboarding = false
-
-    // Midway-owned friend graph (Snap Kit exposes no friends list).
     @Published var friends: [Friend] = []
-
-    // Confirmed meetups.
     @Published var meetups: [Meetup] = []
+    @Published var invites: [MeetupInvite] = []
+    @Published var hasCompletedOnboarding = false
+    @Published var isRestoring = true
 
     // Deep-link routing (App Intents, invite links).
     @Published var pendingPlannerRequest = false
 
     let auth: AuthService
+    let backend: MidwayBackend
     let locationService = LocationService()
-    private let store = PersistenceStore()
 
     init() {
         if TestEnvironment.isUITest {
-            store.reset()
-            self.auth = MockAuthService()
+            auth = MockAuthService()
+            backend = LocalDemoBackend(resetOnLaunch: true)
         } else {
-            // Use real Snapchat login when configured, otherwise the mock so
-            // the app is fully runnable without Snap credentials.
+            // Real Snapchat login when configured, mock otherwise.
             let snap = SnapchatAuthService()
-            self.auth = snap.isAvailable ? snap : MockAuthService()
+            auth = snap.isAvailable ? snap : MockAuthService()
+            if let url = RemoteBackend.configuredURL {
+                backend = RemoteBackend(baseURL: url)
+            } else {
+                backend = LocalDemoBackend(resetOnLaunch: false)
+            }
         }
-        load()
+        Task { await restore() }
     }
 
-    // MARK: - Lifecycle
+    // MARK: - Session lifecycle
 
-    func load() {
-        let snapshot = store.load()
-        profile = snapshot.profile
-        friends = snapshot.friends
-        meetups = snapshot.meetups
-        hasCompletedOnboarding = snapshot.profile.map { !$0.firstName.isEmpty } ?? false
+    private func onboardingKey(for profile: UserProfile) -> String {
+        "midway.onboarded.\(profile.auth.providerUserID)"
     }
 
-    func save() {
-        store.save(.init(profile: profile, friends: friends, meetups: meetups))
+    private func restore() async {
+        defer { isRestoring = false }
+        guard let restored = try? await backend.restoreSession() else { return }
+        profile = restored
+        hasCompletedOnboarding = UserDefaults.standard.bool(forKey: onboardingKey(for: restored))
+        await refresh()
     }
-
-    // MARK: - Auth
 
     func signIn() async throws {
-        let user = try await auth.signIn()
-        if profile == nil || profile?.auth.providerUserID != user.providerUserID {
-            profile = UserProfile(auth: user, firstName: user.displayName)
-            hasCompletedOnboarding = false
-        } else {
-            profile?.auth = user
-        }
-        save()
+        let identity = try await auth.signIn()
+        let profile = try await backend.signIn(as: identity)
+        self.profile = profile
+        hasCompletedOnboarding = UserDefaults.standard.bool(forKey: onboardingKey(for: profile))
+        await refresh()
     }
 
     func signOut() {
+        if let profile {
+            UserDefaults.standard.removeObject(forKey: onboardingKey(for: profile))
+        }
+        Task { await backend.signOut() }
         auth.signOut()
         profile = nil
         friends = []
         meetups = []
+        invites = []
         hasCompletedOnboarding = false
-        store.reset()
     }
 
     func completeOnboarding(with profile: UserProfile) {
         self.profile = profile
         hasCompletedOnboarding = true
-        if friends.isEmpty {
-            friends = DemoData.seedFriends()
+        UserDefaults.standard.set(true, forKey: onboardingKey(for: profile))
+        Task {
+            try? await backend.updateProfile(profile)
+            await refresh()
         }
-        save()
+    }
+
+    /// Push profile edits (Profile tab bindings) to the backend.
+    func saveProfile() {
+        guard let profile else { return }
+        Task { try? await backend.updateProfile(profile) }
+    }
+
+    /// Re-pull friends, meetups, and pending invites.
+    func refresh() async {
+        guard profile != nil else { return }
+        if let updated = try? await backend.friends() { friends = updated }
+        if let updated = try? await backend.meetups() { meetups = updated }
+        if let updated = try? await backend.pendingInvites() { invites = updated }
     }
 
     // MARK: - Friends
@@ -92,23 +107,17 @@ final class AppState: ObservableObject {
     }
 
     func respondToFriendRequest(_ friend: Friend, accept: Bool) {
-        guard let index = friends.firstIndex(where: { $0.id == friend.id }) else { return }
-        if accept {
-            friends[index].status = .accepted
-        } else {
-            friends.remove(at: index)
+        Task {
+            try? await backend.respondToFriendRequest(friend, accept: accept)
+            await refresh()
         }
-        save()
     }
 
     func addFriend(username: String) {
-        let trimmed = username.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty,
-              !friends.contains(where: { $0.username.lowercased() == trimmed.lowercased() }) else { return }
-        friends.append(Friend(displayName: trimmed.capitalized,
-                              username: trimmed.lowercased(),
-                              status: .outgoingRequest))
-        save()
+        Task {
+            try? await backend.sendFriendRequest(username: username)
+            await refresh()
+        }
     }
 
     /// Invite link a friend can open to connect on Midway.
@@ -117,39 +126,26 @@ final class AppState: ObservableObject {
         return URL(string: "midway://invite?from=\(username)")
     }
 
-    // MARK: - Meetups
+    // MARK: - Meetup workflow
 
-    func confirm(suggestion: MeetupSuggestion, request: MeetupRequest, attendeeNames: [String]) -> Meetup {
-        let meetup = Meetup(suggestion: suggestion, type: request.type, attendeeNames: attendeeNames)
-        meetups.insert(meetup, at: 0)
-        save()
-        return meetup
-    }
-
-    func delete(meetup: Meetup) {
-        meetups.removeAll { $0.id == meetup.id }
-        save()
-    }
-
-    // MARK: - Planning helpers
-
-    /// Builds the organizer's planning participant from their profile and
-    /// the location consent they chose for this session.
-    func organizerParticipant(sharing: LocationSharingLevel,
-                              manualPlace: String) async throws -> PlanningParticipant {
-        guard let profile else { throw SuggestionError.noParticipants }
+    /// Builds this user's response with the location consent they chose
+    /// for this session only. Used by both the planner (organizer) and the
+    /// invite responder.
+    func myResponse(sharing: LocationSharingLevel,
+                    manualPlace: String,
+                    isAvailable: Bool = true) async throws -> ParticipantResponse {
+        guard let profile else { throw BackendError.notSignedIn }
+        if !isAvailable {
+            return ParticipantResponse(participantID: profile.id,
+                                       isAvailable: false,
+                                       sharingLevel: .none)
+        }
         if TestEnvironment.isUITest {
-            // Fixed organizer location (Hayes Valley, SF): no permission
-            // dialogs or geocoding on CI.
-            return PlanningParticipant(
-                id: profile.id,
-                name: profile.firstName.isEmpty ? "You" : profile.firstName,
-                transportMode: profile.transportMode,
-                maxTravelMinutes: profile.maxTravelMinutes,
-                budget: profile.budget,
-                interests: profile.interests,
-                coordinate: Coordinate(latitude: 37.7790, longitude: -122.4170)
-            )
+            // Fixed location (Hayes Valley, SF): no permission dialogs on CI.
+            return ParticipantResponse(participantID: profile.id,
+                                       isAvailable: true,
+                                       sharingLevel: sharing,
+                                       coordinate: Coordinate(latitude: 37.7790, longitude: -122.4170))
         }
         let coordinate: Coordinate
         switch sharing {
@@ -163,33 +159,37 @@ final class AppState: ObservableObject {
             }
             coordinate = home.approximate
         }
-        return PlanningParticipant(
-            id: profile.id,
-            name: profile.firstName.isEmpty ? "You" : profile.firstName,
-            transportMode: profile.transportMode,
-            maxTravelMinutes: profile.maxTravelMinutes,
-            budget: profile.budget,
-            interests: profile.interests,
-            coordinate: coordinate
-        )
+        return ParticipantResponse(participantID: profile.id,
+                                   isAvailable: true,
+                                   sharingLevel: sharing,
+                                   coordinate: coordinate,
+                                   manualPlaceName: sharing == .manual ? manualPlace : nil)
     }
 
-    /// MVP stand-in for the real availability/consent round-trip: until the
-    /// backend exists, friends "respond" using their shared defaults and an
-    /// approximate home location.
-    func simulatedResponses(for request: MeetupRequest) -> [PlanningParticipant] {
-        request.participantFriendIDs.compactMap { id in
-            guard let friend = friends.first(where: { $0.id == id }),
-                  let home = friend.homeCoordinate else { return nil }
-            return PlanningParticipant(
-                id: friend.id,
-                name: friend.displayName.components(separatedBy: " ").first ?? friend.displayName,
-                transportMode: friend.transportMode,
-                maxTravelMinutes: friend.maxTravelMinutes,
-                budget: .medium,
-                interests: friend.interests,
-                coordinate: home.approximate
-            )
-        }
+    func startMeetup(_ request: MeetupRequest,
+                     organizerResponse: ParticipantResponse) async throws -> PlannerSession {
+        let sessionID = try await backend.createMeetup(request, organizerResponse: organizerResponse)
+        return PlannerSession(id: sessionID, request: request)
+    }
+
+    func respondToInvite(_ invite: MeetupInvite, response: ParticipantResponse) async throws {
+        try await backend.respondToInvite(invite.id, response: response)
+        await refresh()
+    }
+
+    func confirm(suggestion: MeetupSuggestion,
+                 session: PlannerSession,
+                 attendeeNames: [String]) async throws -> Meetup {
+        let meetup = Meetup(suggestion: suggestion,
+                            type: session.request.type,
+                            attendeeNames: attendeeNames)
+        try await backend.confirmMeetup(sessionID: session.id, meetup: meetup)
+        await refresh()
+        return meetup
+    }
+
+    func delete(meetup: Meetup) {
+        meetups.removeAll { $0.id == meetup.id }
+        Task { await backend.deleteMeetup(meetup.id) }
     }
 }

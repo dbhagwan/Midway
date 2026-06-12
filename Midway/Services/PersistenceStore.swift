@@ -8,6 +8,8 @@ struct PersistenceStore {
         var profile: UserProfile?
         var friends: [Friend] = []
         var meetups: [Meetup] = []
+        /// Demo mode: whether the seeded invite from Ava has been answered.
+        var demoInviteResolved: Bool?
     }
 
     private let fileURL: URL

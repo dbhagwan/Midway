@@ -22,7 +22,7 @@ struct NewMeetupView: View {
     @State private var sharing: LocationSharingLevel = .approximate
     @State private var manualPlace = ""
 
-    @State private var planningContext: PlanningContext?
+    @State private var plannerSession: PlannerSession?
     @State private var isGenerating = false
     @State private var errorMessage: String?
 
@@ -53,7 +53,7 @@ struct NewMeetupView: View {
                 } label: {
                     HStack {
                         if isGenerating { ProgressView().tint(.white) }
-                        Text(isGenerating ? "Finding fair spots…" : "Find places")
+                        Text(isGenerating ? "Asking your friends…" : "Find places")
                             .fontWeight(.semibold)
                     }
                     .frame(maxWidth: .infinity)
@@ -64,8 +64,8 @@ struct NewMeetupView: View {
                           || (sharing == .manual && manualPlace.isEmpty))
                 .padding()
             }
-            .navigationDestination(item: $planningContext) { context in
-                SuggestionsView(context: context) {
+            .navigationDestination(item: $plannerSession) { session in
+                SuggestionsView(session: session) {
                     dismiss()
                 }
             }
@@ -197,16 +197,10 @@ struct NewMeetupView: View {
 
         Task {
             do {
-                let organizer = try await appState.organizerParticipant(
+                let organizerResponse = try await appState.myResponse(
                     sharing: sharing, manualPlace: manualPlace)
-                let friendParticipants = appState.simulatedResponses(for: request)
-                guard !friendParticipants.isEmpty else {
-                    throw SuggestionError.noParticipants
-                }
-                planningContext = PlanningContext(
-                    request: request,
-                    participants: [organizer] + friendParticipants
-                )
+                plannerSession = try await appState.startMeetup(
+                    request, organizerResponse: organizerResponse)
             } catch {
                 errorMessage = error.localizedDescription
             }

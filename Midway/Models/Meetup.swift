@@ -37,8 +37,8 @@ struct ParticipantResponse: Codable, Identifiable, Hashable {
     var participantID: UUID
     var isAvailable: Bool
     var sharingLevel: LocationSharingLevel
-    var coordinate: Coordinate?
-    var manualPlaceName: String?
+    var coordinate: Coordinate? = nil
+    var manualPlaceName: String? = nil
 }
 
 /// A fully resolved participant fed into the suggestion engine:
@@ -107,6 +107,20 @@ struct Meetup: Codable, Identifiable, Hashable {
         self.time = suggestion.suggestedTime
         self.attendeeNames = attendeeNames
         self.explanation = suggestion.explanation
+    }
+
+    init(id: UUID = UUID(), title: String, venueName: String, areaName: String,
+         coordinate: Coordinate, time: Date, attendeeNames: [String],
+         explanation: String, createdAt: Date = Date()) {
+        self.id = id
+        self.title = title
+        self.venueName = venueName
+        self.areaName = areaName
+        self.coordinate = coordinate
+        self.time = time
+        self.attendeeNames = attendeeNames
+        self.explanation = explanation
+        self.createdAt = createdAt
     }
 }
 

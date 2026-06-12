@@ -1,9 +1,10 @@
 import XCTest
 
 /// Drives the full Midway flow in `-uiTestMode` (mock auth, fresh store,
-/// canned venues, fixed locations) and captures a screenshot of every key
-/// screen. PNGs are written to $SCREENSHOT_DIR (passed by CI via
-/// TEST_RUNNER_SCREENSHOT_DIR) and also attached to the test results.
+/// instant demo backend, canned venues, fixed locations) and captures a
+/// screenshot of every key screen. PNGs are written to $SCREENSHOT_DIR
+/// (passed by CI via TEST_RUNNER_SCREENSHOT_DIR) and also attached to the
+/// test results.
 final class ScreenshotTests: XCTestCase {
     private var app: XCUIApplication!
     private var screenshotDirectory: URL!
@@ -53,43 +54,55 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(startButton.waitForExistence(timeout: 5))
         startButton.tap()
 
-        // 5. Home (empty state)
-        let planButton = app.buttons["Plan a meetup"]
-        XCTAssertTrue(planButton.waitForExistence(timeout: 15))
-        capture("05-home-empty")
+        // 5. Home with a pending invite from Ava
+        let inviteRow = app.buttons["invite-row"].firstMatch
+        XCTAssertTrue(inviteRow.waitForExistence(timeout: 15))
+        capture("05-home-invite")
 
-        // 6. Friends tab (seeded demo friends + a pending request)
+        // 6. Respond to the invite (availability + location consent)
+        inviteRow.tap()
+        let sendResponse = app.buttons["Send response"]
+        XCTAssertTrue(sendResponse.waitForExistence(timeout: 10))
+        capture("06-invite-respond")
+        sendResponse.tap()
+
+        // Ava confirms instantly in demo mode — the meetup lands on home.
+        XCTAssertTrue(app.staticTexts["Upcoming"].waitForExistence(timeout: 15))
+
+        // 7. Friends tab (seeded demo friends + a pending request)
         app.tabBars.buttons["Friends"].tap()
         XCTAssertTrue(app.staticTexts["Ava Chen"].waitForExistence(timeout: 10))
-        capture("06-friends")
+        capture("07-friends")
 
-        // 7. Planner wizard
+        // 8. Planner wizard
         app.tabBars.buttons["Meetups"].tap()
+        let planButton = app.buttons["Plan a meetup"].firstMatch
+        XCTAssertTrue(planButton.waitForExistence(timeout: 10))
         planButton.tap()
         let findPlaces = app.buttons["Find places"]
         XCTAssertTrue(findPlaces.waitForExistence(timeout: 10))
         tapRow(containing: "Ava Chen")
         tapRow(containing: "Leo Park")
-        capture("07-planner")
+        capture("08-planner")
 
-        // 8. AI-ranked suggestions on the map
+        // 9. Session collects responses, then AI-ranked suggestions on the map
         findPlaces.tap()
         let meetHere = app.buttons["Meet here"].firstMatch
         XCTAssertTrue(meetHere.waitForExistence(timeout: 60))
         pause(4) // let map tiles render
-        capture("08-suggestions")
+        capture("09-suggestions")
 
-        // 9. Confirmed meetup card
+        // 10. Confirmed meetup card
         meetHere.tap()
         XCTAssertTrue(app.navigationBars["It's a plan!"].waitForExistence(timeout: 15))
         pause(3)
-        capture("09-meetup-card")
+        capture("10-meetup-card")
 
-        // 10. Home with the upcoming meetup
+        // 11. Home with the upcoming meetups
         app.navigationBars["It's a plan!"].buttons["Done"].tap()
         XCTAssertTrue(app.staticTexts["Upcoming"].waitForExistence(timeout: 15))
         pause(1)
-        capture("10-home-upcoming")
+        capture("11-home-upcoming")
     }
 
     // MARK: - Helpers

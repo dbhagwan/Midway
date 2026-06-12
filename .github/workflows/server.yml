@@ -1,0 +1,20 @@
+name: Server
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "Server/**"
+      - ".github/workflows/server.yml"
+
+jobs:
+  test:
+    name: Build and test the Vapor server
+    runs-on: ubuntu-latest
+    container: swift:5.10-jammy
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run server tests
+        working-directory: Server
+        run: swift test

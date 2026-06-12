@@ -49,6 +49,8 @@ demoable in the simulator.
 Midway/
 ├── App/            MidwayApp (entry, URL handling), AppState, RootView
 ├── Models/         Core vocabulary: profiles, friends, requests, suggestions
+├── Networking/     MidwayBackend protocol, RemoteBackend (API client),
+│                   LocalDemoBackend (on-device demo implementation)
 ├── Services/       Auth (Snap Kit + mock), location consent, MapKit places,
 │                   routing ETAs, JSON persistence
 ├── AI/             SuggestionEngine protocol + scoring math,
@@ -56,7 +58,30 @@ Midway/
 │                   FoundationModelsEngine (iOS 26 on-device model)
 ├── Features/       Onboarding, Friends, Planner, Suggestions, Meetups, Profile
 └── Intents/        App Intents ("Plan a Meetup" via Siri/Spotlight/Shortcuts)
+Server/             Vapor 4 + Fluent (SQLite) backend: auth, profiles,
+                    friend graph, meetup sessions & consent workflow
 ```
+
+### Backend
+
+The app talks to a `MidwayBackend` protocol with two interchangeable
+implementations:
+
+- **`LocalDemoBackend`** (default): the entire workflow on-device with seeded
+  friends, simulated responses, and a demo invite — zero setup, used by the
+  simulator and CI.
+- **`RemoteBackend`**: URLSession client for the Vapor server in `Server/`.
+  Run it with `cd Server && swift run`, then set `MIDWAY_API_URL` (in
+  `project.yml` → Info.plist) to e.g. `http://localhost:8080` and regenerate.
+
+The server owns accounts (provider login → opaque bearer token), profiles,
+the friend graph, and meetup sessions: organizer creates a session with their
+own consented location; invitees see it under `GET /v1/meetups/invites` and
+respond with availability + a location at the precision they chose; when
+everyone has answered the session flips to `ready`; the organizer's device
+ranks options on-device and `POST .../confirm` writes the meetup card for all
+attendees — at which point the server **erases all session locations**.
+`swift test` in `Server/` covers the full workflow, including that erasure.
 
 ### The AI is a decision engine, not a chatbot
 
@@ -87,21 +112,21 @@ scores, per-person travel minutes by transport mode, and the explanation.
   Midway-owned and stored locally (JSON store, shaped like the future
   backend contract).
 
-## Current MVP boundaries
+## Current boundaries
 
-- **No backend yet.** Friends are seeded demo data plus locally-added
-  usernames; friend availability/consent responses are simulated from each
-  friend's shared defaults. `PersistenceStore.Snapshot` and
-  `AppState.simulatedResponses(for:)` mark exactly where the real API plugs in.
+- Invite delivery is **polling-based** (pull-to-refresh / on-appear); APNs
+  push is the next infrastructure step.
+- Snap Login Kit tokens are not yet verified server-side (`AuthController`
+  marks where Snap's `/me` verification belongs before production).
+- Tokens are stored in UserDefaults pending a Keychain move.
 - Venue price levels aren't exposed by MapKit, so unknown prices score
   neutral in budget fit.
-- Sign in with Apple fallback, group chat, RSVP nudges, and recurring plans
-  are deliberately deferred.
+- Sign in with Apple fallback, group chat, and recurring plans are
+  deliberately deferred.
 
 ## Roadmap
 
-1. Midway backend: accounts, friend graph, push-based availability requests.
-2. Real participant consent round-trip (each friend picks their own sharing
-   level per plan).
+1. APNs push for invites and confirmations (replace polling).
+2. Server-side Snap token verification + Keychain token storage.
 3. Sign in with Apple as an alternate identity.
-4. Live Activities for "leave now" nudges; calendar/RSVP follow-through.
+4. Live Activities for "leave now" nudges; RSVP follow-through.

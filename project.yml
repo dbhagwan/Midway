@@ -36,6 +36,9 @@ targets:
       properties:
         CFBundleDisplayName: Midway
         UILaunchScreen: {}
+        # Base URL of the Midway server (Server/ in this repo). Leave empty
+        # to run fully on-device with the demo backend.
+        MIDWAY_API_URL: ""
         NSLocationWhenInUseUsageDescription: >-
           Midway uses your location only while planning a meetup, to estimate
           travel times and find fair places to meet. You choose exact,

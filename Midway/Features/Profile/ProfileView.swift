@@ -81,7 +81,7 @@ struct ProfileView: View {
             get: { appState.profile?[keyPath: keyPath] ?? defaultValue },
             set: { newValue in
                 appState.profile?[keyPath: keyPath] = newValue
-                appState.save()
+                appState.saveProfile()
             }
         )
     }
@@ -120,7 +120,7 @@ struct InterestEditorView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         appState.profile?.interests = Array(selected).sorted()
-                        appState.save()
+                        appState.saveProfile()
                         dismiss()
                     }
                 }

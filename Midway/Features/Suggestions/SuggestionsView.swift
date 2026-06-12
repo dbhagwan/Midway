@@ -1,18 +1,26 @@
 import SwiftUI
 import MapKit
 
-/// AI-ranked suggestions on a map, with transparent scores per option and
-/// per-participant travel times. Picking one creates the meetup card.
+/// Drives a planning session to completion: waits for participant
+/// responses, runs the suggestion engine over the consented locations,
+/// shows ranked options on a map, and confirms the group's pick.
 struct SuggestionsView: View {
     @EnvironmentObject private var appState: AppState
 
-    let context: PlanningContext
+    let session: PlannerSession
     /// Called after the user confirms a suggestion, so the planner sheet closes.
     var onConfirmed: () -> Void
 
+    private enum Phase: Equatable {
+        case waiting(awaiting: [String])
+        case ranking
+        case ready
+        case failed(String)
+    }
+
+    @State private var phase: Phase = .waiting(awaiting: [])
+    @State private var participants: [PlanningParticipant] = []
     @State private var suggestions: [MeetupSuggestion] = []
-    @State private var isLoading = true
-    @State private var errorMessage: String?
     @State private var selectedID: UUID?
     @State private var camera: MapCameraPosition = .automatic
     @State private var confirmedMeetup: Meetup?
@@ -22,23 +30,38 @@ struct SuggestionsView: View {
             map
                 .frame(height: 280)
 
-            if isLoading {
+            switch phase {
+            case .waiting(let awaiting):
+                Spacer()
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text(awaiting.isEmpty
+                         ? "Collecting responses…"
+                         : "Waiting for \(awaiting.joined(separator: ", "))…")
+                        .foregroundStyle(.secondary)
+                    Text("Friends choose their own availability and location sharing.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .padding()
+                Spacer()
+            case .ranking:
                 Spacer()
                 ProgressView("Balancing travel, interests, and budget…")
                 Spacer()
-            } else if let errorMessage {
+            case .failed(let message):
                 Spacer()
                 ContentUnavailableView("No suggestions",
                                        systemImage: "mappin.slash",
-                                       description: Text(errorMessage))
+                                       description: Text(message))
                 Spacer()
-            } else {
+            case .ready:
                 suggestionList
             }
         }
         .navigationTitle("Suggestions")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await loadSuggestions() }
+        .task { await run() }
         .sheet(item: $confirmedMeetup) { meetup in
             MeetupDetailView(meetup: meetup, isNewlyCreated: true) {
                 confirmedMeetup = nil
@@ -47,11 +70,52 @@ struct SuggestionsView: View {
         }
     }
 
+    // MARK: - Session loop
+
+    private func run() async {
+        guard suggestions.isEmpty else { return }
+        let deadline = Date().addingTimeInterval(120)
+
+        // Poll until everyone has answered (or we run out of patience and
+        // rank with whoever responded).
+        var state: MeetupSessionState?
+        while Date() < deadline {
+            do {
+                let current = try await appState.backend.sessionState(session.id)
+                state = current
+                if current.status == .ready { break }
+                phase = .waiting(awaiting: current.awaitingNames)
+            } catch {
+                phase = .failed(error.localizedDescription)
+                return
+            }
+            try? await Task.sleep(for: .seconds(2))
+        }
+
+        guard let state, state.participants.count >= 2 else {
+            phase = .failed("Nobody shared availability in time. Try again, or pick different friends.")
+            return
+        }
+
+        participants = state.participants
+        phase = .ranking
+        do {
+            let context = PlanningContext(request: session.request,
+                                          participants: state.participants)
+            let engine = SuggestionEngineFactory.make()
+            suggestions = try await engine.suggestions(for: context)
+            selectedID = suggestions.first?.id
+            phase = .ready
+        } catch {
+            phase = .failed(error.localizedDescription)
+        }
+    }
+
     // MARK: - Map
 
     private var map: some View {
         Map(position: $camera) {
-            ForEach(context.participants) { participant in
+            ForEach(participants) { participant in
                 Annotation(participant.name, coordinate: participant.coordinate.clCoordinate) {
                     Image(systemName: "person.circle.fill")
                         .font(.title3)
@@ -73,7 +137,7 @@ struct SuggestionsView: View {
             SuggestionCard(
                 rank: index + 1,
                 suggestion: suggestion,
-                participants: context.participants,
+                participants: participants,
                 isSelected: suggestion.id == selectedID
             ) {
                 confirm(suggestion)
@@ -93,25 +157,17 @@ struct SuggestionsView: View {
 
     // MARK: - Actions
 
-    private func loadSuggestions() async {
-        guard suggestions.isEmpty else { return }
-        do {
-            let engine = SuggestionEngineFactory.make()
-            suggestions = try await engine.suggestions(for: context)
-            selectedID = suggestions.first?.id
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-        isLoading = false
-    }
-
     private func confirm(_ suggestion: MeetupSuggestion) {
-        let names = context.participants.map(\.name)
-        confirmedMeetup = appState.confirm(
-            suggestion: suggestion,
-            request: context.request,
-            attendeeNames: names
-        )
+        Task {
+            do {
+                confirmedMeetup = try await appState.confirm(
+                    suggestion: suggestion,
+                    session: session,
+                    attendeeNames: participants.map(\.name))
+            } catch {
+                phase = .failed(error.localizedDescription)
+            }
+        }
     }
 }
 

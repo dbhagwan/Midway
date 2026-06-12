@@ -21,6 +21,8 @@ struct Friend: Codable, Identifiable, Hashable {
     /// Rough home coordinate, only present if the friend opted in.
     var homeCoordinate: Coordinate?
     var homeAreaName: String
+    /// Server-side friend-request ID, set in remote mode.
+    var edgeID: UUID?
 
     init(id: UUID = UUID(),
          displayName: String,
@@ -31,7 +33,8 @@ struct Friend: Codable, Identifiable, Hashable {
          maxTravelMinutes: Int = 30,
          interests: [String] = [],
          homeCoordinate: Coordinate? = nil,
-         homeAreaName: String = "") {
+         homeAreaName: String = "",
+         edgeID: UUID? = nil) {
         self.id = id
         self.displayName = displayName
         self.username = username
@@ -42,5 +45,6 @@ struct Friend: Codable, Identifiable, Hashable {
         self.interests = interests
         self.homeCoordinate = homeCoordinate
         self.homeAreaName = homeAreaName
+        self.edgeID = edgeID
     }
 }

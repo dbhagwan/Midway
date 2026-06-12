@@ -4,7 +4,9 @@ struct RootView: View {
     @EnvironmentObject private var appState: AppState
 
     var body: some View {
-        if appState.profile == nil {
+        if appState.isRestoring {
+            ProgressView()
+        } else if appState.profile == nil {
             SignInView()
         } else if !appState.hasCompletedOnboarding {
             OnboardingFlowView()
