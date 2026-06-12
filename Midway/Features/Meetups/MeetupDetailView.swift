@@ -107,8 +107,10 @@ struct MeetupDetailView: View {
                     Button {
                         shareToSnapchat()
                     } label: {
-                        Label("Send as a Snap", systemImage: "bolt.fill")
-                            .foregroundStyle(Color(red: 0.95, green: 0.8, blue: 0))
+                        HStack(spacing: 10) {
+                            SnapGhostGlyph(size: 20)
+                            Text("Send as a Snap")
+                        }
                     }
                 }
             }

@@ -32,8 +32,8 @@ struct SignInView: View {
                 Button {
                     signIn(with: .snapchat)
                 } label: {
-                    HStack {
-                        Image(systemName: "bolt.fill")
+                    HStack(spacing: 10) {
+                        SnapGhostGlyph(size: 22)
                         Text(isSigningIn ? "Signing in…" : "Continue with Snapchat")
                             .fontWeight(.semibold)
                     }
