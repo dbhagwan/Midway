@@ -121,14 +121,21 @@ struct SuggestionsView: View {
         }
 
         // Publish the ranked options so the group can vote, then keep the
-        // tallies live while this screen is up.
+        // tallies live while this screen is up. Only write state on actual
+        // changes — constant invalidation makes the UI churn (and starves
+        // XCUITest's accessibility snapshots on CI).
         try? await appState.backend.publishSuggestions(sessionID: session.id, suggestions)
         while !Task.isCancelled, phase == .ready {
             if let options = try? await appState.backend.votableSuggestions(sessionID: session.id) {
-                votersByRank = Dictionary(uniqueKeysWithValues: options.map {
+                let tallies = Dictionary(uniqueKeysWithValues: options.map {
                     ($0.rank, $0.voterNames)
                 })
+                if tallies != votersByRank {
+                    votersByRank = tallies
+                }
             }
+            // Demo votes land once and never change; stop polling there.
+            if TestEnvironment.isUITest, !votersByRank.isEmpty { break }
             try? await Task.sleep(for: .seconds(3))
         }
     }
