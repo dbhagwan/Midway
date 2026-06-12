@@ -89,6 +89,7 @@ struct FriendsView: View {
                 Label("Block & report", systemImage: "exclamationmark.bubble")
             }
         }
+    }
 
     private func requestCard(_ friend: Friend) -> some View {
         HStack(spacing: 14) {
