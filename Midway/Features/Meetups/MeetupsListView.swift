@@ -23,7 +23,7 @@ struct MeetupsListView: View {
                         Text("Start a plan and Midway will find a spot that's fair for everyone.")
                     } actions: {
                         Button("Plan a meetup") { showPlanner = true }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.glassProminent)
                     }
                 } else {
                     List {

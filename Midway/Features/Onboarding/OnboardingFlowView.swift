@@ -39,7 +39,7 @@ struct OnboardingFlowView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .disabled(step == 0 && firstName.trimmingCharacters(in: .whitespaces).isEmpty)
                 .padding()
             }
@@ -151,23 +151,30 @@ struct InterestTagGrid: View {
     private let columns = [GridItem(.adaptive(minimum: 110), spacing: 8)]
 
     var body: some View {
-        LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-            ForEach(tags, id: \.self) { tag in
-                let isOn = selected.contains(tag)
-                Button {
-                    if isOn { selected.remove(tag) } else { selected.insert(tag) }
-                } label: {
-                    Text(tag)
-                        .font(.subheadline)
-                        .lineLimit(1)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .frame(maxWidth: .infinity)
-                        .background(isOn ? Color.accentColor : Color(.secondarySystemBackground),
-                                    in: Capsule())
-                        .foregroundStyle(isOn ? .white : .primary)
+        GlassEffectContainer(spacing: 8) {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+                ForEach(tags, id: \.self) { tag in
+                    let isOn = selected.contains(tag)
+                    Button {
+                        withAnimation(.snappy) {
+                            if isOn { selected.remove(tag) } else { selected.insert(tag) }
+                        }
+                    } label: {
+                        Text(tag)
+                            .font(.subheadline)
+                            .lineLimit(1)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .frame(maxWidth: .infinity)
+                            .foregroundStyle(isOn ? .white : .primary)
+                    }
+                    .buttonStyle(.plain)
+                    .glassEffect(
+                        isOn ? .regular.tint(.accentColor).interactive()
+                             : .regular.interactive(),
+                        in: .capsule
+                    )
                 }
-                .buttonStyle(.plain)
             }
         }
     }

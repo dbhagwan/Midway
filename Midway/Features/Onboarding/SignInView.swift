@@ -10,8 +10,10 @@ struct SignInView: View {
             Spacer()
 
             Image(systemName: "point.3.connected.trianglepath.dotted")
-                .font(.system(size: 72))
+                .font(.system(size: 64))
                 .foregroundStyle(.tint)
+                .padding(28)
+                .glassEffect(.regular.tint(.accentColor.opacity(0.15)), in: .circle)
 
             Text("Midway")
                 .font(.system(size: 44, weight: .bold, design: .rounded))
@@ -34,7 +36,7 @@ struct SignInView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
             .tint(.yellow)
             .foregroundStyle(.black)
             .disabled(isSigningIn)

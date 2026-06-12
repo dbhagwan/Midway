@@ -170,7 +170,7 @@ struct SuggestionCard: View {
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
             .controlSize(.small)
         }
         .padding(.vertical, 6)

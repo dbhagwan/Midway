@@ -29,6 +29,7 @@ struct MainTabView: View {
             ProfileView()
                 .tabItem { Label("Profile", systemImage: "person.crop.circle") }
         }
+        .tabBarMinimizeBehavior(.onScrollDown)
         .sheet(isPresented: $showPlanner) {
             NewMeetupView()
         }

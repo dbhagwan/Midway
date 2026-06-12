@@ -59,7 +59,7 @@ struct NewMeetupView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .disabled(selectedFriendIDs.isEmpty || isGenerating
                           || (sharing == .manual && manualPlace.isEmpty))
                 .padding()

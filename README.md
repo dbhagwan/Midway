@@ -13,7 +13,11 @@ list.
 
 ## Getting started
 
-Requirements: Xcode 16+ (Xcode 26 for the on-device AI path), [XcodeGen](https://github.com/yonaskolb/XcodeGen).
+Requirements: Xcode 26+, iOS 26 SDK, [XcodeGen](https://github.com/yonaskolb/XcodeGen).
+Midway targets iOS 26 and adopts the Liquid Glass design language: prominent
+glass CTAs, interactive glass interest chips in a `GlassEffectContainer`, and
+a tab bar that minimizes on scroll — with system chrome (tab bars, toolbars,
+sheets) picking up Liquid Glass automatically.
 
 ```sh
 brew install xcodegen
@@ -21,7 +25,7 @@ xcodegen generate
 open Midway.xcodeproj
 ```
 
-Build and run the `Midway` scheme on an iOS 17+ simulator or device. Run the
+Build and run the `Midway` scheme on an iOS 26+ simulator or device. Run the
 unit tests with the `MidwayTests` target (`Cmd-U`).
 
 **No Snap credentials needed to try it**: when `SCSDKClientId` is unset, the
@@ -64,7 +68,7 @@ typed `MeetupSuggestion` values:
    per-participant ETAs in parallel, and score each candidate on
    **fairness** (spread + personal travel tolerances), **interest match**,
    and **budget fit** (`MeetupScoring`, fully unit-tested).
-2. **On-device re-ranking** (`FoundationModelsEngine`, iOS 26+): Apple's
+2. **On-device re-ranking** (`FoundationModelsEngine`): Apple's
    Foundation Models framework re-ranks the grounded candidates and writes
    the one-line explanations using guided generation into `@Generable`
    structs, with a `travelTime` tool available for follow-up checks. It can
