@@ -67,7 +67,9 @@ final class ScreenshotTests: XCTestCase {
         sendResponse.tap()
 
         // Ava confirms instantly in demo mode — the meetup lands on home.
-        XCTAssertTrue(app.staticTexts["Upcoming"].waitForExistence(timeout: 15))
+        // Generous timeout: sheet dismissal + list update can crawl on
+        // loaded CI simulators.
+        XCTAssertTrue(app.staticTexts["Upcoming"].waitForExistence(timeout: 45))
 
         // 7. Friends tab (seeded demo friends + a pending request)
         app.tabBars.buttons["Friends"].tap()
