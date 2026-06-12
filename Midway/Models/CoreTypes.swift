@@ -180,22 +180,34 @@ struct TimeWindow: Codable, Hashable {
     static let now = TimeWindow(kind: .now)
 
     /// The concrete time Midway proposes for a meetup inside this window.
+    /// Never returns a time in the past: "tonight" at 9 PM means soon,
+    /// not the 7 PM that already went by.
     func suggestedTime(calendar: Calendar = .current, from reference: Date = Date()) -> Date {
+        // Leave enough time for everyone to travel.
+        let earliest = reference.addingTimeInterval(45 * 60)
         switch kind {
         case .now:
-            // Leave enough time for everyone to travel.
-            return reference.addingTimeInterval(45 * 60)
+            return earliest
         case .tonight:
-            return calendar.date(bySettingHour: 19, minute: 0, second: 0, of: reference) ?? reference
+            let sevenPM = calendar.date(bySettingHour: 19, minute: 0, second: 0, of: reference) ?? reference
+            return max(sevenPM, earliest)
         case .tomorrow:
             let tomorrow = calendar.date(byAdding: .day, value: 1, to: reference) ?? reference
             return calendar.date(bySettingHour: 18, minute: 30, second: 0, of: tomorrow) ?? tomorrow
         case .thisWeekend:
-            var next = reference
-            while !calendar.isDateInWeekend(next) {
-                next = calendar.date(byAdding: .day, value: 1, to: next) ?? next
+            // First weekend day whose 2 PM is still reachable; late on a
+            // weekend afternoon this rolls to the next weekend day (or
+            // next weekend entirely).
+            var day = reference
+            for _ in 0..<8 {
+                if calendar.isDateInWeekend(day),
+                   let twoPM = calendar.date(bySettingHour: 14, minute: 0, second: 0, of: day),
+                   twoPM >= earliest {
+                    return twoPM
+                }
+                day = calendar.date(byAdding: .day, value: 1, to: day) ?? day
             }
-            return calendar.date(bySettingHour: 14, minute: 0, second: 0, of: next) ?? next
+            return earliest
         case .custom:
             return customStart ?? reference
         }
