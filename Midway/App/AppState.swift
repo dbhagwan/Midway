@@ -24,10 +24,15 @@ final class AppState: ObservableObject {
     private let store = PersistenceStore()
 
     init() {
-        // Use real Snapchat login when configured, otherwise the mock so the
-        // app is fully runnable in the simulator without Snap credentials.
-        let snap = SnapchatAuthService()
-        self.auth = snap.isAvailable ? snap : MockAuthService()
+        if TestEnvironment.isUITest {
+            store.reset()
+            self.auth = MockAuthService()
+        } else {
+            // Use real Snapchat login when configured, otherwise the mock so
+            // the app is fully runnable without Snap credentials.
+            let snap = SnapchatAuthService()
+            self.auth = snap.isAvailable ? snap : MockAuthService()
+        }
         load()
     }
 
@@ -133,6 +138,19 @@ final class AppState: ObservableObject {
     func organizerParticipant(sharing: LocationSharingLevel,
                               manualPlace: String) async throws -> PlanningParticipant {
         guard let profile else { throw SuggestionError.noParticipants }
+        if TestEnvironment.isUITest {
+            // Fixed organizer location (Hayes Valley, SF): no permission
+            // dialogs or geocoding on CI.
+            return PlanningParticipant(
+                id: profile.id,
+                name: profile.firstName.isEmpty ? "You" : profile.firstName,
+                transportMode: profile.transportMode,
+                maxTravelMinutes: profile.maxTravelMinutes,
+                budget: profile.budget,
+                interests: profile.interests,
+                coordinate: Coordinate(latitude: 37.7790, longitude: -122.4170)
+            )
+        }
         let coordinate: Coordinate
         switch sharing {
         case .exact, .approximate:

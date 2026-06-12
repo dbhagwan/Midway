@@ -8,6 +8,9 @@ struct RoutingService {
     func travelMinutes(from origin: Coordinate,
                        to destination: Coordinate,
                        mode: TransportMode) async -> Double {
+        if TestEnvironment.isUITest {
+            return estimatedMinutes(from: origin, to: destination, mode: mode)
+        }
         if let transportType = mkTransportType(for: mode) {
             let request = MKDirections.Request()
             request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin.clCoordinate))

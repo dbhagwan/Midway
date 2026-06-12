@@ -1,0 +1,79 @@
+name: UI Screenshots
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  screenshots:
+    name: Build, test, and capture UI screenshots
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          # Prefer the latest Xcode 16.x on the image; keep the default otherwise.
+          LATEST=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$LATEST" ]; then sudo xcode-select -s "$LATEST"; fi
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Pick a simulator
+        id: sim
+        run: |
+          xcrun simctl list devices available
+          NAME=$(xcrun simctl list devices available \
+            | grep -Eo 'iPhone 1[6-9][a-zA-Z ]*' | head -1 | sed 's/ *$//')
+          echo "name=${NAME:-iPhone 16}" >> "$GITHUB_OUTPUT"
+          echo "Using simulator: ${NAME:-iPhone 16}"
+
+      - name: Build and run tests (unit + UI screenshots)
+        env:
+          TEST_RUNNER_SCREENSHOT_DIR: ${{ github.workspace }}/screenshots
+        run: |
+          set -o pipefail
+          mkdir -p screenshots
+          xcodebuild test \
+            -project Midway.xcodeproj \
+            -scheme Midway \
+            -destination "platform=iOS Simulator,name=${{ steps.sim.outputs.name }}" \
+            -resultBundlePath TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee xcodebuild.log
+
+      - name: Upload screenshots artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: midway-ui-screenshots
+          path: screenshots/*.png
+          if-no-files-found: warn
+
+      - name: Upload logs and result bundle on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            TestResults.xcresult
+            xcodebuild.log
+
+      - name: Commit screenshots to the branch
+        if: success()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p docs/screenshots
+          cp screenshots/*.png docs/screenshots/
+          git add docs/screenshots
+          git commit -m "Add simulator UI screenshots [skip ci]" || echo "No new screenshots"
+          git push

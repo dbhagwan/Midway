@@ -24,7 +24,7 @@ targets:
       - Midway
     dependencies:
       - package: SnapSDK
-        product: SCSDKLoginKit
+        product: SnapSDK
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.midway.app
@@ -63,3 +63,25 @@ targets:
       - MidwayTests
     dependencies:
       - target: Midway
+
+  MidwayUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - MidwayUITests
+    dependencies:
+      - target: Midway
+
+schemes:
+  Midway:
+    build:
+      targets:
+        Midway: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - MidwayTests
+        - MidwayUITests
