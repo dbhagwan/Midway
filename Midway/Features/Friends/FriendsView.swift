@@ -1,68 +1,46 @@
 import SwiftUI
 
+/// Friends, Snapchat-style: big avatars, bold names, glass cards.
 struct FriendsView: View {
     @EnvironmentObject private var appState: AppState
     @State private var showAddFriend = false
 
+    private var outgoing: [Friend] {
+        appState.friends.filter { $0.status == .outgoingRequest }
+    }
+
     var body: some View {
         NavigationStack {
-            List {
-                if !appState.incomingRequests.isEmpty {
-                    Section("Requests") {
-                        ForEach(appState.incomingRequests) { friend in
-                            FriendRow(friend: friend) {
-                                HStack(spacing: 12) {
-                                    Button {
-                                        appState.respondToFriendRequest(friend, accept: true)
-                                    } label: {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundStyle(.green)
-                                    }
-                                    Button {
-                                        appState.respondToFriendRequest(friend, accept: false)
-                                    } label: {
-                                        Image(systemName: "xmark.circle.fill")
-                                            .foregroundStyle(.red)
-                                    }
-                                }
-                                .font(.title2)
-                                .buttonStyle(.plain)
+            ScrollView {
+                GlassEffectContainer(spacing: 14) {
+                    VStack(spacing: 14) {
+                        if !appState.incomingRequests.isEmpty {
+                            SectionLabel(text: "Added me")
+                            ForEach(appState.incomingRequests) { friend in
+                                requestCard(friend)
                             }
                         }
-                    }
-                }
 
-                Section("Friends on Midway") {
-                    if appState.acceptedFriends.isEmpty {
-                        ContentUnavailableView(
-                            "No friends yet",
-                            systemImage: "person.2",
-                            description: Text("Invite friends to Midway to start planning meetups.")
-                        )
-                    } else {
-                        ForEach(appState.acceptedFriends) { friend in
-                            FriendRow(friend: friend) {
-                                Text(friend.homeAreaName)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                        SectionLabel(text: "My friends")
+                        if appState.acceptedFriends.isEmpty {
+                            emptyCard
+                        } else {
+                            ForEach(appState.acceptedFriends) { friend in
+                                friendCard(friend)
                             }
                         }
-                    }
-                }
 
-                let outgoing = appState.friends.filter { $0.status == .outgoingRequest }
-                if !outgoing.isEmpty {
-                    Section("Sent") {
-                        ForEach(outgoing) { friend in
-                            FriendRow(friend: friend) {
-                                Text("Pending")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                        if !outgoing.isEmpty {
+                            SectionLabel(text: "Pending")
+                            ForEach(outgoing) { friend in
+                                pendingCard(friend)
                             }
                         }
                     }
+                    .padding()
                 }
             }
+            .background(MidwayBackground())
             .navigationTitle("Friends")
             .toolbar {
                 Button {
@@ -74,59 +52,98 @@ struct FriendsView: View {
             .sheet(isPresented: $showAddFriend) {
                 AddFriendView()
             }
+            .refreshable {
+                await appState.refresh()
+            }
         }
     }
-}
 
-struct FriendRow<Trailing: View>: View {
-    let friend: Friend
-    @ViewBuilder var trailing: Trailing
+    // MARK: - Cards
 
-    var body: some View {
-        HStack {
-            AvatarView(name: friend.displayName, url: friend.avatarURL)
-            VStack(alignment: .leading) {
+    private func friendCard(_ friend: Friend) -> some View {
+        HStack(spacing: 14) {
+            AvatarView(name: friend.displayName, url: friend.avatarURL, size: 56)
+            VStack(alignment: .leading, spacing: 3) {
                 Text(friend.displayName)
-                Text("@\(friend.username)")
-                    .font(.caption)
+                    .font(.headline)
+                Text(subtitle(for: friend))
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            trailing
-        }
-    }
-}
-
-/// Bitmoji avatar when available, monogram circle otherwise.
-struct AvatarView: View {
-    let name: String
-    var url: URL?
-    var size: CGFloat = 40
-
-    var body: some View {
-        Group {
-            if let url {
-                AsyncImage(url: url) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    monogram
-                }
-            } else {
-                monogram
+            if !friend.interests.isEmpty {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(Color.midwayAmber)
             }
         }
-        .frame(width: size, height: size)
-        .clipShape(Circle())
+        .glassCard()
     }
 
-    private var monogram: some View {
-        Circle()
-            .fill(Color.accentColor.opacity(0.2))
-            .overlay {
-                Text(String(name.prefix(1)))
-                    .font(.system(size: size * 0.45, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.accentColor)
+    private func requestCard(_ friend: Friend) -> some View {
+        HStack(spacing: 14) {
+            AvatarView(name: friend.displayName, url: friend.avatarURL, size: 56)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(friend.displayName).font(.headline)
+                Text("wants to be friends")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
+            Spacer()
+            Button {
+                appState.respondToFriendRequest(friend, accept: true)
+            } label: {
+                Image(systemName: "checkmark")
+                    .fontWeight(.bold)
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.glassProminent)
+            .tint(.midwayTeal)
+            Button {
+                appState.respondToFriendRequest(friend, accept: false)
+            } label: {
+                Image(systemName: "xmark")
+                    .fontWeight(.bold)
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.glass)
+        }
+        .glassCard()
+    }
+
+    private func pendingCard(_ friend: Friend) -> some View {
+        HStack(spacing: 14) {
+            AvatarView(name: friend.displayName, url: friend.avatarURL, size: 44)
+            Text(friend.displayName).font(.headline)
+            Spacer()
+            Text("Invited")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .glassCard()
+    }
+
+    private var emptyCard: some View {
+        VStack(spacing: 10) {
+            AvatarStack(names: ["Ava", "Leo", "Maya"], size: 40)
+            Text("No friends on Midway yet")
+                .font(.headline)
+            Text("Invite friends with your link or QR code — Midway shows only friends who are here.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Add friends") { showAddFriend = true }
+                .buttonStyle(.glassProminent)
+        }
+        .frame(maxWidth: .infinity)
+        .glassCard(padding: 24)
+    }
+
+    private func subtitle(for friend: Friend) -> String {
+        var parts = ["@\(friend.username)"]
+        if !friend.homeAreaName.isEmpty {
+            parts.append(friend.homeAreaName)
+        }
+        return parts.joined(separator: " · ")
     }
 }
 

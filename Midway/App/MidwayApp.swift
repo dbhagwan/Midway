@@ -11,6 +11,7 @@ struct MidwayApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(appState)
+                .tint(.midwayCoral)
                 .onOpenURL { url in
                     handle(url: url)
                 }

@@ -9,21 +9,23 @@ struct ProfileView: View {
             if let profile = appState.profile {
                 Form {
                     Section {
-                        HStack {
+                        VStack(spacing: 10) {
                             AvatarView(name: profile.firstName,
                                        url: profile.auth.avatarURL,
-                                       size: 56)
-                            VStack(alignment: .leading) {
-                                Text(profile.firstName).font(.headline)
-                                Text("@\(profile.username)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Text(profile.auth.provider == .snapchat
-                                     ? "Signed in with Snapchat" : "Demo account")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
+                                       size: 88)
+                            Text(profile.firstName).font(.title3.bold())
+                            Text("@\(profile.username)")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Text(profile.auth.provider == .snapchat
+                                 ? "Signed in with Snapchat" : "Demo account")
+                                .font(.caption)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .glassEffect(.regular, in: .capsule)
                         }
+                        .frame(maxWidth: .infinity)
+                        .listRowBackground(Color.clear)
                     }
 
                     Section("Getting around") {
@@ -65,6 +67,7 @@ struct ProfileView: View {
                         Text("Signing out removes your Midway data from this device. Snapchat only ever shares your display name, Bitmoji, and an ID with Midway.")
                     }
                 }
+                .onMidwayBackground()
                 .navigationTitle("Profile")
                 .sheet(isPresented: $showInterestEditor) {
                     InterestEditorView()

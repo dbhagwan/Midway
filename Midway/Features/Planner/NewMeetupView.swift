@@ -40,6 +40,7 @@ struct NewMeetupView: View {
                     }
                 }
             }
+            .onMidwayBackground()
             .navigationTitle("New meetup")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -90,15 +91,23 @@ struct NewMeetupView: View {
                 Button {
                     toggle(friend.id)
                 } label: {
-                    HStack {
-                        AvatarView(name: friend.displayName, url: friend.avatarURL, size: 32)
-                        Text(friend.displayName)
-                            .foregroundStyle(.primary)
+                    HStack(spacing: 12) {
+                        AvatarView(name: friend.displayName, url: friend.avatarURL, size: 44)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(friend.displayName)
+                                .foregroundStyle(.primary)
+                            if !friend.homeAreaName.isEmpty {
+                                Text(friend.homeAreaName)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                         Spacer()
                         Image(systemName: selectedFriendIDs.contains(friend.id)
                               ? "checkmark.circle.fill" : "circle")
+                            .font(.title3)
                             .foregroundStyle(selectedFriendIDs.contains(friend.id)
-                                             ? Color.accentColor : Color.secondary)
+                                             ? Color.midwayCoral : Color.secondary)
                     }
                 }
             }

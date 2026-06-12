@@ -49,8 +49,14 @@ struct MeetupDetailView: View {
                 LabeledContent("When") {
                     Text(meetup.time, format: .dateTime.weekday(.wide).month().day().hour().minute())
                 }
-                LabeledContent("Who") {
+                HStack {
+                    Text("Who")
+                    Spacer()
+                    AvatarStack(names: meetup.attendeeNames, size: 28)
                     Text(meetup.attendeeNames.joined(separator: ", "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
             }
 
@@ -84,6 +90,7 @@ struct MeetupDetailView: View {
                 }
             }
         }
+        .onMidwayBackground()
         .toolbar {
             if isNewlyCreated {
                 ToolbarItem(placement: .confirmationAction) {

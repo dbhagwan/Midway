@@ -24,6 +24,7 @@ struct OnboardingFlowView: View {
                 privacyStep.tag(2)
             }
             .tabViewStyle(.page(indexDisplayMode: .always))
+            .background(MidwayBackground())
             .navigationTitle("Set up Midway")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
@@ -52,7 +53,7 @@ struct OnboardingFlowView: View {
     // MARK: Step 1 — basics
 
     private var basicsStep: some View {
-        Form {
+        styledForm {
             Section("About you") {
                 TextField("First name", text: $firstName)
                 TextField("Midway username", text: $username)
@@ -110,7 +111,7 @@ struct OnboardingFlowView: View {
     // MARK: Step 3 — privacy
 
     private var privacyStep: some View {
-        Form {
+        styledForm {
             Section {
                 Picker("Default location sharing", selection: $sharingDefault) {
                     ForEach(LocationSharingLevel.allCases) { level in
@@ -124,6 +125,11 @@ struct OnboardingFlowView: View {
                 Text("Midway asks for location only while planning a meetup, and you can override this choice every time. Nothing is shared in the background.")
             }
         }
+    }
+
+    private func styledForm<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        Form { content() }
+            .scrollContentBackground(.hidden)
     }
 
     private func finish() {

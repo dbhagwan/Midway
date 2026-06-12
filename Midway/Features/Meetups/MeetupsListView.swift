@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Home tab: pending invites, upcoming and past meetups, and the entry
-/// point to the planner.
+/// Home tab: pending invites, upcoming and past meetups as floating glass
+/// cards over the brand wash, plus the entry point to the planner.
 struct MeetupsListView: View {
     @EnvironmentObject private var appState: AppState
     @Binding var showPlanner: Bool
@@ -17,13 +17,19 @@ struct MeetupsListView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if appState.meetups.isEmpty && appState.invites.isEmpty {
-                    emptyState
-                } else {
-                    meetupList
+            ScrollView {
+                GlassEffectContainer(spacing: 14) {
+                    VStack(spacing: 14) {
+                        if appState.meetups.isEmpty && appState.invites.isEmpty {
+                            heroEmptyState
+                        } else {
+                            content
+                        }
+                    }
+                    .padding()
                 }
             }
+            .background(MidwayBackground())
             .navigationTitle("Midway")
             .navigationDestination(for: Meetup.self) { meetup in
                 MeetupDetailView(meetup: meetup, isNewlyCreated: false, onDone: nil)
@@ -32,7 +38,7 @@ struct MeetupsListView: View {
                 Button {
                     showPlanner = true
                 } label: {
-                    Image(systemName: "plus.circle.fill")
+                    Image(systemName: "plus")
                 }
             }
             .sheet(item: $respondingTo) { invite in
@@ -47,104 +53,139 @@ struct MeetupsListView: View {
         }
     }
 
-    private var emptyState: some View {
-        ContentUnavailableView {
-            Label("No meetups yet", systemImage: "mappin.and.ellipse")
-        } description: {
-            Text("Start a plan and Midway will find a spot that's fair for everyone.")
-        } actions: {
-            Button("Plan a meetup") { showPlanner = true }
-                .buttonStyle(.glassProminent)
+    // MARK: - Sections
+
+    @ViewBuilder
+    private var content: some View {
+        if !appState.invites.isEmpty {
+            SectionLabel(text: "Invites")
+            ForEach(appState.invites) { invite in
+                Button {
+                    respondingTo = invite
+                } label: {
+                    InviteCard(invite: invite)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("invite-row")
+            }
         }
+
+        if !upcoming.isEmpty {
+            SectionLabel(text: "Upcoming")
+            ForEach(upcoming) { meetup in
+                NavigationLink(value: meetup) {
+                    MeetupCard(meetup: meetup)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+
+        if !past.isEmpty {
+            SectionLabel(text: "Past")
+            ForEach(past) { meetup in
+                NavigationLink(value: meetup) {
+                    MeetupCard(meetup: meetup, isPast: true)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+
+        planCTA
+            .padding(.top, 6)
     }
 
-    private var meetupList: some View {
-        List {
-            if !appState.invites.isEmpty {
-                Section("Invites") {
-                    ForEach(appState.invites) { invite in
-                        Button {
-                            respondingTo = invite
-                        } label: {
-                            InviteRow(invite: invite)
-                        }
-                        .accessibilityIdentifier("invite-row")
-                    }
-                }
-            }
-
-            if !upcoming.isEmpty {
-                Section("Upcoming") {
-                    ForEach(upcoming) { meetup in
-                        NavigationLink(value: meetup) {
-                            MeetupRow(meetup: meetup)
-                        }
-                    }
-                }
-            }
-
-            if !past.isEmpty {
-                Section("Past") {
-                    ForEach(past) { meetup in
-                        NavigationLink(value: meetup) {
-                            MeetupRow(meetup: meetup)
-                        }
-                    }
-                }
-            }
-
-            Section {
-                Button {
-                    showPlanner = true
-                } label: {
-                    Label("Plan a meetup", systemImage: "plus")
-                        .fontWeight(.medium)
-                }
-            }
+    private var heroEmptyState: some View {
+        VStack(spacing: 16) {
+            AvatarStack(names: ["Ava", "Leo", "Maya", "Sam"], size: 46)
+                .padding(.top, 28)
+            Text("No meetups yet")
+                .font(.title2.bold())
+            Text("Start a plan and Midway will find a spot that's fair for everyone.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            planCTA
+                .padding(.bottom, 16)
         }
+        .frame(maxWidth: .infinity)
+        .glassCard(cornerRadius: 32, padding: 24)
+        .padding(.top, 40)
+    }
+
+    private var planCTA: some View {
+        Button {
+            showPlanner = true
+        } label: {
+            Label("Plan a meetup", systemImage: "sparkles")
+                .fontWeight(.semibold)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+        }
+        .buttonStyle(.glassProminent)
     }
 }
 
-struct InviteRow: View {
+// MARK: - Cards
+
+struct InviteCard: View {
     let invite: MeetupInvite
 
     var body: some View {
-        HStack {
-            Image(systemName: invite.type.symbolName)
-                .font(.title3)
-                .foregroundStyle(.tint)
-                .frame(width: 36)
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 14) {
+            AvatarView(name: invite.organizerName, size: 56)
+                .overlay(alignment: .bottomTrailing) {
+                    Image(systemName: invite.type.symbolName)
+                        .font(.caption2)
+                        .padding(5)
+                        .background(Color.midwayCoral, in: Circle())
+                        .foregroundStyle(.white)
+                }
+            VStack(alignment: .leading, spacing: 3) {
                 Text("\(invite.type.label) with \(invite.organizerName)")
                     .font(.headline)
                     .foregroundStyle(.primary)
                 Text("\(invite.timeWindow.kind.label) · wants your availability")
-                    .font(.caption)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+            Text("Reply")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.midwayCoral)
         }
-        .padding(.vertical, 2)
+        .glassCard()
     }
 }
 
-struct MeetupRow: View {
+struct MeetupCard: View {
     let meetup: Meetup
+    var isPast = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(meetup.title).font(.headline)
-            Text(meetup.time, format: .dateTime.weekday(.wide).hour().minute())
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            Text("With \(meetup.attendeeNames.joined(separator: ", "))")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(meetup.title)
+                        .font(.headline)
+                    Text(meetup.time, format: .dateTime.weekday(.wide).hour().minute())
+                        .font(.subheadline)
+                        .foregroundStyle(isPast ? .secondary : Color.midwayCoral)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            HStack {
+                AvatarStack(names: meetup.attendeeNames, size: 28)
+                Text(meetup.attendeeNames.joined(separator: ", "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
         }
-        .padding(.vertical, 2)
+        .glassCard()
+        .opacity(isPast ? 0.7 : 1)
     }
 }
 
@@ -166,11 +207,15 @@ struct InviteRespondView: View {
         NavigationStack {
             Form {
                 Section {
-                    LabeledContent("Plan") {
-                        Text("\(invite.type.label) · \(invite.timeWindow.kind.label)")
-                    }
-                    LabeledContent("From") {
-                        Text(invite.organizerName)
+                    HStack(spacing: 14) {
+                        AvatarView(name: invite.organizerName, size: 56)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("\(invite.type.label) · \(invite.timeWindow.kind.label)")
+                                .font(.headline)
+                            Text("\(invite.organizerName) wants to find a fair spot")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
 
@@ -203,6 +248,7 @@ struct InviteRespondView: View {
                     Section { Text(errorMessage).foregroundStyle(.red) }
                 }
             }
+            .onMidwayBackground()
             .navigationTitle("You're invited")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

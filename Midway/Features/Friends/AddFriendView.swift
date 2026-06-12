@@ -43,6 +43,7 @@ struct AddFriendView: View {
                     }
                 }
             }
+            .onMidwayBackground()
             .navigationTitle("Add friend")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
