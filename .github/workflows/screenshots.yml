@@ -89,12 +89,14 @@ jobs:
             xcodebuild.log
 
       - name: Commit screenshots and video to the branch
-        if: success()
+        # Temporarily always(): committing diagnostic captures while
+        # debugging the invite-respond failure. Restore to success() after.
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           mkdir -p docs/screenshots docs/media
-          cp screenshots/*.png docs/screenshots/
+          cp screenshots/*.png docs/screenshots/ 2>/dev/null || true
           cp logo-animation.mp4 docs/media/ 2>/dev/null || true
           git add docs/screenshots docs/media
           git commit -m "Add simulator UI screenshots and logo video [skip ci]" || echo "No changes"

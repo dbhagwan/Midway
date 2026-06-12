@@ -69,7 +69,12 @@ final class ScreenshotTests: XCTestCase {
         // Ava confirms instantly in demo mode — the meetup lands on home.
         // Generous timeout: sheet dismissal + list update can crawl on
         // loaded CI simulators.
-        XCTAssertTrue(app.staticTexts["Upcoming"].waitForExistence(timeout: 45))
+        if !app.staticTexts["Upcoming"].waitForExistence(timeout: 45) {
+            // Diagnostic: capture whatever the screen actually shows so the
+            // failure is debuggable from the committed artifacts.
+            capture("99-debug-after-send")
+            XCTFail("'Upcoming' never appeared after sending the invite response")
+        }
 
         // 7. Friends tab (seeded demo friends + a pending request)
         app.tabBars.buttons["Friends"].tap()
