@@ -225,8 +225,7 @@ final class RemoteBackend: MidwayBackend {
 
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
-            struct VaporError: Decodable { var reason: String? }
-            let reason = (try? decoder.decode(VaporError.self, from: data))?.reason
+            let reason = (try? decoder.decode(VaporErrorBody.self, from: data))?.reason
             throw BackendError.server(reason ?? "Server error (\(status)).")
         }
         if T.self == EmptyReply.self, data.isEmpty {
@@ -236,6 +235,10 @@ final class RemoteBackend: MidwayBackend {
     }
 
     struct EmptyReply: Decodable {}
+
+    // Types can't be declared inside generic functions, so the error
+    // envelope lives at type scope.
+    private struct VaporErrorBody: Decodable { var reason: String? }
 }
 
 // MARK: - Wire DTOs (mirror Server/Sources/App/DTOs.swift)
