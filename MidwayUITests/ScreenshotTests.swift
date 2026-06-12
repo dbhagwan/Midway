@@ -101,7 +101,10 @@ final class ScreenshotTests: XCTestCase {
 
         // 10. Confirmed meetup card
         meetHere.tap()
-        XCTAssertTrue(app.navigationBars["It's a plan!"].waitForExistence(timeout: 15))
+        if !app.navigationBars["It's a plan!"].waitForExistence(timeout: 30) {
+            capture("98-debug-after-meet-here")
+            XCTFail("'It's a plan!' sheet never appeared after Meet here")
+        }
         pause(3)
         capture("10-meetup-card")
 

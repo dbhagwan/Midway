@@ -114,12 +114,8 @@ final class ScoringTests: XCTestCase {
 
     // MARK: - Time windows
 
-    func testTonightSuggestsSevenPM() {
-        let window = TimeWindow(kind: .tonight)
-        let time = window.suggestedTime()
-        let hour = Calendar.current.component(.hour, from: time)
-        XCTAssertEqual(hour, 19)
-    }
+    // ("Tonight" behavior lives in TimeWindowTests with fixed reference
+    // dates — asserting on Date() made this suite fail after 7 PM.)
 
     func testNowLeavesTravelBuffer() {
         let reference = Date()

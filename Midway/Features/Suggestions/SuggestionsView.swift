@@ -134,8 +134,10 @@ struct SuggestionsView: View {
                     votersByRank = tallies
                 }
             }
-            // Demo votes land once and never change; stop polling there.
-            if TestEnvironment.isUITest, !votersByRank.isEmpty { break }
+            // Demo votes land once and never change; stop polling once an
+            // actual vote (not just empty tallies) has arrived.
+            if TestEnvironment.isUITest,
+               votersByRank.values.contains(where: { !$0.isEmpty }) { break }
             try? await Task.sleep(for: .seconds(3))
         }
     }
