@@ -60,8 +60,8 @@ targets:
           - CFBundleURLName: com.midway.app
             CFBundleURLSchemes:
               - midway
-        # --- Snap Kit configuration (replace with your Snap Kit app values) ---
-        SCSDKClientId: YOUR_SNAP_KIT_CLIENT_ID
+        # --- Snap Kit configuration ---
+        SCSDKClientId: 0895c8bf-bb25-459b-8dfb-5e47163385c7
         SCSDKRedirectUrl: midway://snap-kit/oauth2
         SCSDKScopes:
           - https://auth.snapchat.com/oauth2/api/user.display_name
