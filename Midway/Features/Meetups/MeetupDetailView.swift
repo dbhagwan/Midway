@@ -130,12 +130,15 @@ struct MeetupDetailView: View {
             }
         }
         .onMidwayBackground()
-        .onAppear {
-            if shareImage == nil {
-                let renderer = ImageRenderer(content: MeetupShareCard(meetup: meetup))
-                renderer.scale = 3
-                shareImage = renderer.uiImage
-            }
+        .task {
+            // Render the share card after the sheet is on screen, not during
+            // onAppear: at 3x this is heavy enough to delay the sheet becoming
+            // interactive (and to starve UI-test snapshots) if done eagerly.
+            guard shareImage == nil else { return }
+            await Task.yield()
+            let renderer = ImageRenderer(content: MeetupShareCard(meetup: meetup))
+            renderer.scale = 3
+            shareImage = renderer.uiImage
         }
         .toolbar {
             if isNewlyCreated {
