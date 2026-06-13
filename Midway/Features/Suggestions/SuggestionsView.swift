@@ -159,6 +159,10 @@ struct SuggestionsView: View {
                     .tint(suggestion.id == selectedID ? Color.midwayCoral : Color.secondary)
             }
         }
+        // MapKit's accessibility tree is huge and churns while tiles load —
+        // hiding it under XCUITest keeps hierarchy snapshots fast on CI
+        // (it still renders for screenshots).
+        .accessibilityHidden(TestEnvironment.isXCTestRun)
     }
 
     private func focus(on index: Int, animated: Bool = true) {

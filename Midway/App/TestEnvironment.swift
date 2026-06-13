@@ -6,4 +6,9 @@ import Foundation
 /// runs offline-safe with no permission dialogs.
 enum TestEnvironment {
     static let isUITest = ProcessInfo.processInfo.arguments.contains("-uiTestMode")
+
+    /// True only under XCTest (not for plain `-uiTestMode` launches like
+    /// the CI video recording, which must keep the logo animation).
+    static let isXCTestRun =
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 }

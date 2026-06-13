@@ -14,6 +14,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        // Under XCUITest, continuous animations (map tiles, pulses) keep the
+        // app from ever reporting idle, starving accessibility snapshots on
+        // slow CI simulators. Plain -uiTestMode launches keep animations so
+        // the CI video still captures the logo intro.
+        if TestEnvironment.isXCTestRun {
+            UIView.setAnimationsEnabled(false)
+        }
         return true
     }
 
