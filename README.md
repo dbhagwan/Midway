@@ -129,7 +129,8 @@ scores, per-person travel minutes by transport mode, and the explanation.
   everywhere, plus "Send as a Snap" via Creative Kit when Snap is
   configured. Universal links (`https://midway.app/add/<username>`) with
   the AASA file served by the backend.
-- **Deploy**: `Server/Dockerfile` (static release build); set
+- **Deploy**: free hosting via Render + Neon — see [DEPLOY.md](DEPLOY.md).
+  `Server/Dockerfile` (static release build) works on any Docker host; set
   `DATABASE_URL` for Postgres in production, SQLite otherwise.
 
 ## Remaining before App Store submission

@@ -16,5 +16,5 @@ WORKDIR /app
 COPY --from=build /build/.build/release/App /app/App
 ENV MIDWAY_DB_PATH=/data/midway.sqlite
 EXPOSE 8080
-ENTRYPOINT ["/app/App"]
-CMD ["serve", "--env", "production", "--hostname", "0.0.0.0", "--port", "8080"]
+# Render (and most PaaS hosts) inject PORT; default to 8080 elsewhere.
+ENTRYPOINT ["/bin/sh", "-c", "/app/App serve --env production --hostname 0.0.0.0 --port ${PORT:-8080}"]

@@ -1,0 +1,23 @@
+# Render blueprint: creates the Midway API service from Server/Dockerfile.
+# In the Render dashboard: New + → Blueprint → pick this repo.
+# After creation, set DATABASE_URL (from Neon) in the service's Environment.
+services:
+  - type: web
+    name: midway-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Server/Dockerfile
+    dockerContext: ./Server
+    healthCheckPath: /healthz
+    envVars:
+      - key: DATABASE_URL
+        sync: false   # paste your Neon connection string in the dashboard
+      # Uncomment when you have an Apple push key:
+      # - key: APNS_KEY_P8
+      #   sync: false
+      # - key: APNS_KEY_ID
+      #   sync: false
+      # - key: APNS_TEAM_ID
+      #   sync: false
+      # - key: APNS_TOPIC
+      #   value: com.midway.app
