@@ -84,7 +84,8 @@ final class SnapchatAuthService: AuthService {
                     providerUserID: userData?.externalID ?? UUID().uuidString,
                     provider: .snapchat,
                     displayName: userData?.displayName ?? "Snapchatter",
-                    avatarURL: (userData?.bitmojiTwoDAvatarUrl).flatMap(URL.init(string:))
+                    avatarURL: (userData?.bitmojiTwoDAvatarUrl).flatMap(URL.init(string:)),
+                    credential: SCSDKLoginClient.getAccessToken()
                 )
                 continuation.resume(returning: user)
             } failure: { error, _ in

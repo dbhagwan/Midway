@@ -41,7 +41,8 @@ extension AppleAuthService: ASAuthorizationControllerDelegate,
             providerUserID: credential.user,
             provider: .apple,
             displayName: name.isEmpty ? "Midway friend" : name,
-            avatarURL: nil
+            avatarURL: nil,
+            credential: credential.identityToken.flatMap { String(data: $0, encoding: .utf8) }
         ))
         continuation = nil
     }

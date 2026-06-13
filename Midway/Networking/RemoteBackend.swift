@@ -55,6 +55,7 @@ final class RemoteBackend: MidwayBackend {
             var providerUserID: String
             var displayName: String
             var avatarURL: String?
+            var credential: String?
         }
         struct Response: Decodable {
             var token: String
@@ -64,7 +65,8 @@ final class RemoteBackend: MidwayBackend {
             provider: identity.provider.rawValue,
             providerUserID: identity.providerUserID,
             displayName: identity.displayName,
-            avatarURL: identity.avatarURL?.absoluteString
+            avatarURL: identity.avatarURL?.absoluteString,
+            credential: identity.credential
         ), authorized: false)
         token = response.token
         storedIdentity = identity

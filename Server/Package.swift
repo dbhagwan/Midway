@@ -12,6 +12,7 @@ let package = Package(
         .package(url: "https://github.com/vapor/fluent-sqlite-driver.git", from: "4.6.0"),
         .package(url: "https://github.com/vapor/fluent-postgres-driver.git", from: "2.8.0"),
         .package(url: "https://github.com/vapor/apns.git", from: "4.0.0"),
+        .package(url: "https://github.com/vapor/jwt.git", from: "4.2.0"),
         // Pinned: 1.1+ uses Swift 6 typed-throws syntax that 5.10 can't parse.
         .package(url: "https://github.com/apple/swift-async-algorithms.git", exact: "1.0.4"),
     ],
@@ -24,6 +25,7 @@ let package = Package(
                 .product(name: "FluentSQLiteDriver", package: "fluent-sqlite-driver"),
                 .product(name: "FluentPostgresDriver", package: "fluent-postgres-driver"),
                 .product(name: "VaporAPNS", package: "apns"),
+                .product(name: "JWT", package: "jwt"),
             ],
             path: "Sources/App"
         ),

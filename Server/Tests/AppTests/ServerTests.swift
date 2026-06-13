@@ -359,6 +359,39 @@ final class ServerTests: XCTestCase {
         }
     }
 
+    func testAppleLoginWithoutCredentialIsRejected() throws {
+        try app.test(.POST, "v1/auth/login", beforeRequest: { req in
+            try req.content.encode(LoginRequest(
+                provider: "apple", providerUserID: "fake-apple-id",
+                displayName: "Impostor", avatarURL: nil, username: nil,
+                credential: nil))
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .unauthorized)
+        })
+    }
+
+    func testAppleLoginWithGarbageTokenIsRejected() throws {
+        try app.test(.POST, "v1/auth/login", beforeRequest: { req in
+            try req.content.encode(LoginRequest(
+                provider: "apple", providerUserID: "fake-apple-id",
+                displayName: "Impostor", avatarURL: nil, username: nil,
+                credential: "not.a.jwt"))
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .unauthorized)
+        })
+    }
+
+    func testUnknownProviderIsRejected() throws {
+        try app.test(.POST, "v1/auth/login", beforeRequest: { req in
+            try req.content.encode(LoginRequest(
+                provider: "facebook", providerUserID: "x",
+                displayName: "X", avatarURL: nil, username: nil,
+                credential: nil))
+        }, afterResponse: { res in
+            XCTAssertEqual(res.status, .unauthorized)
+        })
+    }
+
     private static let confirmBody = ConfirmMeetupBody(
         title: "Coffee at Ritual", venueName: "Ritual Coffee Roasters",
         areaName: "Hayes Valley", lat: 37.776, lon: -122.423,

@@ -59,9 +59,11 @@ on-device demo mode.
   the next request takes 30–60 s while it wakes. Fine for TestFlight.
   When real users arrive, upgrade the service to Starter (~$7/mo) to keep
   it always-on.
-- **Before a public launch**: implement identity-token verification in
-  `Server/Sources/App/routes.swift` (`AuthController` — marked with TODO).
-  Until then, treat the deployment as friends-and-testers only.
+- **Sign-in security**: Apple and Snapchat identities are verified
+  server-side (Apple's public keys / Snap's `/me` endpoint). The mock
+  sign-in used by development builds is blocked in production unless you
+  set `MIDWAY_ALLOW_MOCK_AUTH=true` in Render's Environment — set it while
+  testing without Snap/Apple credentials, and **remove it before launch**.
 - **Universal links**: once you own a domain, point it at the Render
   service, replace `TEAMID` in the AASA route (`routes.swift`) and the
   associated-domains entitlement in `project.yml`, and

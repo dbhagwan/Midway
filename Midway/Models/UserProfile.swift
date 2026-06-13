@@ -8,6 +8,9 @@ struct AuthenticatedUser: Codable, Hashable {
     var displayName: String
     /// Bitmoji or other avatar URL, if the provider exposes one.
     var avatarURL: URL?
+    /// Proof of identity the server verifies with the provider: Apple's
+    /// identity token (JWT) or Snap's access token. Nil for the mock.
+    var credential: String?
 }
 
 enum AuthProvider: String, Codable {

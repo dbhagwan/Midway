@@ -135,7 +135,8 @@ scores, per-person travel minutes by transport mode, and the explanation.
 
 ## Remaining before App Store submission
 
-- Verify Snap/Apple identity tokens server-side (marked in `AuthController`).
+- Remove `MIDWAY_ALLOW_MOCK_AUTH` from the server environment (mock
+  sign-in is for development; Apple/Snap tokens are verified server-side).
 - Replace `TEAMID` in the AASA route and entitlements with the real team ID;
   point `midway.app` at the deployed server.
 - Venue price/hours via a places API (budget fit is neutral on unknown).

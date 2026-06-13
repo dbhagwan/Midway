@@ -1,4 +1,5 @@
 import Fluent
+import JWT
 import Vapor
 
 /// Bearer-token auth: tokens are opaque strings issued at login.
@@ -84,23 +85,25 @@ struct AuthController: RouteCollection {
         routes.post("auth", "login", use: login)
     }
 
-    /// Exchange a provider identity (Snapchat Login Kit on device, or the
-    /// mock in demo builds) for a Midway token, creating the user on first
-    /// login. NOTE: production must verify the Snap access token server-side
-    /// against Snap's /me endpoint before trusting providerUserID.
+    /// Exchange a provider identity for a Midway token, creating the user on
+    /// first login. The provider credential is verified server-side — Apple
+    /// identity tokens against Apple's public keys, Snap access tokens
+    /// against Snap's /me endpoint — and the verified subject (not the
+    /// client's claim) becomes the canonical provider user ID.
     func login(req: Request) async throws -> LoginResponse {
         let body = try req.content.decode(LoginRequest.self)
+        let verifiedID = try await Self.verifyIdentity(body, on: req)
 
         let user: User
         if let existing = try await User.query(on: req.db)
             .filter(\.$provider == body.provider)
-            .filter(\.$providerUserID == body.providerUserID)
+            .filter(\.$providerUserID == verifiedID)
             .first() {
             user = existing
         } else {
             user = User()
             user.provider = body.provider
-            user.providerUserID = body.providerUserID
+            user.providerUserID = verifiedID
             user.displayName = body.displayName
             user.avatarURL = body.avatarURL
             user.username = try await Self.availableUsername(
@@ -118,6 +121,61 @@ struct AuthController: RouteCollection {
                               userID: try user.requireID())
         try await token.create(on: req.db)
         return LoginResponse(token: token.value, user: try UserDTO(user))
+    }
+
+    /// Returns the provider-verified user ID, or throws .unauthorized.
+    private static func verifyIdentity(_ body: LoginRequest,
+                                       on req: Request) async throws -> String {
+        switch body.provider {
+        case "apple":
+            guard let credential = body.credential else {
+                throw Abort(.unauthorized, reason: "Missing Apple identity token.")
+            }
+            let bundleID = Environment.get("APPLE_BUNDLE_ID") ?? "com.midway.app"
+            do {
+                let identity = try await req.jwt.apple.verify(
+                    credential, applicationIdentifier: bundleID)
+                return identity.subject.value
+            } catch {
+                req.logger.info("Apple token verification failed: \(error)")
+                throw Abort(.unauthorized, reason: "Apple rejected the identity token.")
+            }
+
+        case "snapchat":
+            guard let credential = body.credential else {
+                throw Abort(.unauthorized, reason: "Missing Snapchat access token.")
+            }
+            struct SnapMe: Decodable {
+                struct DataBox: Decodable {
+                    struct Me: Decodable { var externalId: String }
+                    var me: Me
+                }
+                var data: DataBox
+            }
+            let response = try await req.client.post("https://kit.snapchat.com/v1/me") { creq in
+                creq.headers.bearerAuthorization = .init(token: credential)
+                try creq.content.encode(["query": "{me{externalId}}"])
+            }
+            guard response.status == .ok,
+                  let payload = try? response.content.decode(SnapMe.self) else {
+                throw Abort(.unauthorized, reason: "Snapchat rejected the access token.")
+            }
+            return payload.data.me.externalId
+
+        case "mock":
+            // Development identity. In production it must be explicitly
+            // enabled (useful until Snap/Apple credentials are configured);
+            // remove MIDWAY_ALLOW_MOCK_AUTH before a public launch.
+            let allowed = req.application.environment != .production
+                || Environment.get("MIDWAY_ALLOW_MOCK_AUTH") == "true"
+            guard allowed else {
+                throw Abort(.unauthorized, reason: "Mock sign-in is disabled in production.")
+            }
+            return body.providerUserID
+
+        default:
+            throw Abort(.unauthorized, reason: "Unknown identity provider.")
+        }
     }
 
     static func availableUsername(preferred: String, on db: Database) async throws -> String {

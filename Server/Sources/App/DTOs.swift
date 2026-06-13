@@ -8,6 +8,9 @@ struct LoginRequest: Content {
     var displayName: String
     var avatarURL: String?
     var username: String?
+    /// Apple identity token (JWT) or Snap access token; verified
+    /// server-side before the identity is trusted.
+    var credential: String?
 }
 
 struct LoginResponse: Content {
